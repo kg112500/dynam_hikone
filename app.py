@@ -3,22 +3,25 @@ import pandas as pd
 import plotly.express as px
 
 # --- 設定 ---
-# スプレッドシートURLがある場合はここに貼る
+# スプレッドシートのURLがある場合はここに貼る
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1wIdronWDW8xK0jDepQfWbFPBbnIVrkTls2hBDqcduVI/export?format=csv" 
 
 # --- ページ設定 ---
-st.set_page_config(page_title="特定日攻略(機種入替対応)", layout="wide")
+st.set_page_config(page_title="特定日攻略(機種別対応)", layout="wide")
 st.title("🎰 特定日攻略・狙い台分析ツール (機種入替対応版)")
 
 # --- 1. データ読み込み ---
 @st.cache_data(ttl=600)
 def load_data():
     df = None
+    # URLから読み込みトライ
     if SHEET_URL:
         try:
             df = pd.read_csv(SHEET_URL)
         except:
             pass
+    
+    # ダメならローカルファイル
     if df is None:
         try:
             df = pd.read_csv("dynam_hikone_complete.csv")
@@ -67,11 +70,6 @@ def load_data():
     else:
         df["台末尾"] = 0
 
-    # ★ユニークIDの作成 (台番 × 機種 × 日付)
-    # これにより、内部的にすべてのデータがユニークに扱われます
-    if "台番号" in df.columns and "機種" in df.columns:
-        df["Unique_ID"] = df["日付str"] + "_" + df["台番号"].astype(str) + "_" + df["機種"]
-
     return df
 
 df = load_data()
@@ -80,12 +78,14 @@ if df is None:
     st.error("データ読み込みエラー。CSVファイルまたはURLを確認してください。")
     st.stop()
 
-# --- サイドバー：戦略設定 ---
+# --- サイドバー ---
 st.sidebar.header("🎯 戦略設定")
-# ★ここに追加！「データを最新にするボタン」
+
+# データ更新ボタン
 if st.sidebar.button("🔄 データを最新に更新"):
     st.cache_data.clear()
     st.rerun()
+
 # 期間フィルタ
 min_d, max_d = df["日付"].min(), df["日付"].max()
 dates = st.sidebar.date_input("分析期間", [min_d, max_d])
@@ -100,7 +100,7 @@ target_ends = st.sidebar.multiselect(
     default=[5] 
 )
 
-# データフィルタリング
+# データ抽出
 if target_ends:
     target_df = df[df["末尾"].isin(target_ends)].copy()
 else:
@@ -112,7 +112,7 @@ if target_df.empty:
 
 # --- 共通計算ロジック ---
 def calculate_metrics(dataframe, group_cols):
-    # グルーピング集計
+    # 指定されたカラム（リスト）でグループ化して集計
     agg = dataframe.groupby(group_cols).agg(
         サンプル数=("総差枚", "count"),
         勝数=("総差枚", lambda x: (x > 0).sum()),
@@ -122,6 +122,7 @@ def calculate_metrics(dataframe, group_cols):
         平均G数=("G数", "mean")
     ).reset_index()
     
+    # 指標計算
     agg["勝率"] = (agg["勝数"] / agg["サンプル数"] * 100).round(1)
     agg["機械割"] = agg.apply(
         lambda x: ((x["総G数"]*3 + x["総差枚"]) / (x["総G数"]*3) * 100) if x["総G数"] > 0 else 0, 
@@ -136,7 +137,7 @@ st.caption(f"抽出データ: {len(target_df)} 件")
 # === タブ構成 ===
 tab1, tab2, tab3, tab4 = st.tabs([
     "① 特定日×台末尾", 
-    "② 特定日×全台番(機種別)", # ここを変更
+    "② 特定日×全台番(機種別)", # ★ここがメイン
     "③ 特定日×機種", 
     "④ 特定日×機種×末尾"
 ])
@@ -147,7 +148,7 @@ tab1, tab2, tab3, tab4 = st.tabs([
 with tab1:
     st.subheader("① 台番号の「末尾」傾向")
     if "台番号" in target_df.columns:
-        matsubi_metrics = calculate_metrics(target_df, "台末尾")
+        matsubi_metrics = calculate_metrics(target_df, ["台末尾"]) # リストで渡す
         
         fig = px.bar(matsubi_metrics, x="台末尾", y="平均差枚", 
                      color="機械割", color_continuous_scale="RdYlGn",
@@ -164,41 +165,46 @@ with tab1:
         )
 
 # ==========================================
-# 2. 特定日 × 全ての台番 (機種別分離)
+# 2. 特定日 × 全ての台番 (機種別分離・完成版)
 # ==========================================
 with tab2:
     st.subheader("② 鉄板台ランキング（機種入替 対応版）")
-    st.markdown("同じ台番号でも、**機種が変われば別データ**として扱って集計しています。")
+    st.markdown("同じ台番号でも、**機種が違う場合は別のデータ**として扱って集計しています。")
     
     if "台番号" not in target_df.columns:
         st.error("台番号のデータがありません。")
     else:
+        # スライダー設定
         min_sample = st.slider("最低稼働回数", 1, 10, 1, key="tab2_slider")
         
-        # ★ここが重要：台番号だけでなく「機種」も含めてグルーピングする
+        # ★ここが修正ポイント
+        # 「台番号」と「機種」の2つでグルーピングする
         daiban_metrics = calculate_metrics(target_df, ["台番号", "機種"])
         
+        # フィルタ
         filtered_metrics = daiban_metrics[daiban_metrics["サンプル数"] >= min_sample]
         
         if filtered_metrics.empty:
             st.warning(f"条件に合うデータがありません。")
         else:
-            # グラフ用ラベル作成 (台番 + 機種)
-            filtered_metrics["Label"] = filtered_metrics["台番号"].astype(str) + " (" + filtered_metrics["機種"] + ")"
+            # グラフ用に表示名を作る (例: "555 (マイジャグラー)")
+            filtered_metrics["表示名"] = filtered_metrics["台番号"].astype(str) + " (" + filtered_metrics["機種"] + ")"
 
             # 散布図
             fig = px.scatter(filtered_metrics, x="勝率", y="平均差枚", 
                              size="サンプル数", color="機械割", 
-                             hover_name="Label", # ホバー時に機種名も出る
+                             hover_name="表示名", # マウスを乗せると機種名も出る
                              hover_data=["台番号", "機種"],
-                             text="台番号", # 表示はシンプルに台番のみ
+                             text="台番号", 
                              color_continuous_scale="RdYlGn",
                              title="勝率 vs 平均差枚 (台番×機種ごと)")
+            
             fig.add_hline(y=0, line_dash="dash", line_color="gray")
             fig.add_vline(x=50, line_dash="dash", line_color="gray")
             st.plotly_chart(fig, use_container_width=True)
             
-            # リスト
+            # リスト表示
+            # 台番号と機種を並べて表示
             st.dataframe(
                 filtered_metrics[["台番号", "機種", "機械割", "勝率", "平均差枚", "平均G数", "サンプル数"]]
                 .sort_values("機械割", ascending=False)
@@ -212,7 +218,7 @@ with tab2:
 # ==========================================
 with tab3:
     st.subheader("③ 機種別 強さランキング")
-    model_metrics = calculate_metrics(target_df, "機種")
+    model_metrics = calculate_metrics(target_df, ["機種"])
     
     min_model_sample = st.slider("最低稼働台数", 1, 10, 1, key="tab3_slider")
     model_metrics = model_metrics[model_metrics["サンプル数"] >= min_model_sample]
@@ -266,5 +272,4 @@ with tab4:
                         zmin=90, zmax=110, aspect="auto", text_auto=True)
         
         fig.update_layout(xaxis=dict(tickmode='linear', tick0=0, dtick=1), height=600)
-
         st.plotly_chart(fig, use_container_width=True)

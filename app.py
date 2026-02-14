@@ -82,7 +82,10 @@ if df is None:
 
 # --- サイドバー：戦略設定 ---
 st.sidebar.header("🎯 戦略設定")
-
+# ★ここに追加！「データを最新にするボタン」
+if st.sidebar.button("🔄 データを最新に更新"):
+    st.cache_data.clear()
+    st.rerun()
 # 期間フィルタ
 min_d, max_d = df["日付"].min(), df["日付"].max()
 dates = st.sidebar.date_input("分析期間", [min_d, max_d])
@@ -263,4 +266,5 @@ with tab4:
                         zmin=90, zmax=110, aspect="auto", text_auto=True)
         
         fig.update_layout(xaxis=dict(tickmode='linear', tick0=0, dtick=1), height=600)
+
         st.plotly_chart(fig, use_container_width=True)

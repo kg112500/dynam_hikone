@@ -90,7 +90,7 @@ if "台番号" in df.columns and "機種" in df.columns:
     except:
         pass
 
-# --- ★修正: テーブル幅の最適化 ---
+# --- ★修正: ヘッダー下の入力欄を削除 ---
 def display_filterable_table(df_in, key_id):
     if df_in.empty:
         st.info("データがありません")
@@ -125,14 +125,13 @@ def display_filterable_table(df_in, key_id):
 
     gb = GridOptionsBuilder.from_dataframe(df_filtered)
     
-    # ★変更: デフォルトの最小幅を小さく設定 (40px)
     gb.configure_default_column(
         resizable=True,
         filterable=True,
         sortable=True,
-        floatingFilter=True,
+        floatingFilter=False, # ★ここをFalseに変更（入力欄を削除）
         suppressMenuHide=True, 
-        minWidth=40, # 狭くできるようにする
+        minWidth=40,
     )
 
     # JS設定
@@ -140,22 +139,16 @@ def display_filterable_table(df_in, key_id):
     style_diff = JsCode("""function(p){if(p.value>0){return{'color':'blue','fontWeight':'bold'};}if(p.value<0){return{'color':'red'};}return null;}""")
     style_status = JsCode("""function(p){if(p.value==='💀撤去'){return{'color':'gray'};}return{'fontWeight':'bold'};}""")
 
-    # --- ★列ごとの幅設定 (ダイエット) ---
-    
-    # 設置 (50px)
+    # --- 列ごとの幅設定 ---
     if "設置" in df_filtered.columns:
         gb.configure_column("設置", width=50, cellStyle=style_status) 
-        # pinned="left" はスマホの「全幅表示」と相性が悪いことがあるので外しました
 
-    # 台番号 (50px)
     if "台番号" in df_filtered.columns:
         gb.configure_column("台番号", width=50, type=["numericColumn"], valueFormatter="x.toLocaleString()")
 
-    # 機種 (flex=1: 余った幅を全部使う)
     if "機種" in df_filtered.columns:
         gb.configure_column("機種", minWidth=100, flex=1)
 
-    # 数値データはギリギリまで狭く (50-60px)
     numeric_configs = {
         "勝率": {"width": 60, "format": "x + '%'"},
         "機械割": {"width": 60, "format": "x + '%'", "style": style_machine_wari},
@@ -180,14 +173,13 @@ def display_filterable_table(df_in, key_id):
 
     grid_options = gb.build()
     
-    # ★変更: fit_columns_on_grid_load=True (画面幅に強制的に収める)
     AgGrid(
         df_filtered,
         gridOptions=grid_options,
         allow_unsafe_jscode=True,
         enable_enterprise_modules=False,
         height=400,
-        fit_columns_on_grid_load=True, # これが「横スクロールなし」の決定打
+        fit_columns_on_grid_load=True,
         theme="ag-theme-alpine", 
         key=f"grid_{key_id}"
     )

@@ -13,26 +13,30 @@ MAPPING_URL = "https://docs.google.com/spreadsheets/d/1wIdronWDW8xK0jDepQfWbFPBb
 # --- ページ設定 ---
 st.set_page_config(page_title="ダイナム彦根分析ツール", layout="wide")
 
-# ★修正: 強力なCSS注入 (右上のアイコン群とフッターを完全に消す)
+# ★修正: サイドバーボタンを守りつつ、不要なリンクだけを確実に消すCSS
 hide_st_style = """
     <style>
-    /* 1. 右上のハンバーガーメニュー (三点リーダー) を消す */
+    /* 1. 右上のハンバーガーメニュー (三点リーダー) だけを消す */
     #MainMenu {visibility: hidden;}
     
-    /* 2. フッター (Made with Streamlit) を消す */
-    footer {visibility: hidden;}
-    
-    /* 3. 右上のデプロイボタン (GitHubアイコンやロケット) を消す */
+    /* 2. 右上のデプロイボタン (GitHubアイコンなど) を消す */
     .stDeployButton {display: none;}
+    
+    /* 3. フッター (Made with Streamlit) を消す */
+    footer {visibility: hidden;}
     
     /* 4. 上部の虹色の装飾線を消す */
     [data-testid="stDecoration"] {display: none;}
     
-    /* 5. 右上のツールバー全体を非表示 (念のため) */
-    [data-testid="stToolbar"] {visibility: hidden;}
-
-    /* 6. スマホ版のフッターバッジ (Hosted with Streamlit) を消す */
-    .viewerBadge_container__1QSob {display: none !important;}
+    /* 5. 【重要】スマホ版の下部バッジ (Hosted with Streamlit) を強力に消す */
+    /* クラス名の一部が変わっても対応できるように前方一致で指定 */
+    div[class^='viewerBadge_container'] {display: none !important;}
+    
+    /* 6. ヘッダー自体は表示する (これを消すとサイドバーボタンも消えるため) */
+    header {visibility: visible !important;}
+    
+    /* 7. 明示的にサイドバー開閉ボタンを表示する */
+    [data-testid="collapsedControl"] {visibility: visible !important; display: block !important;}
     </style>
 """
 st.markdown(hide_st_style, unsafe_allow_html=True)

@@ -6,8 +6,8 @@ import plotly.express as px
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1wIdronWDW8xK0jDepQfWbFPBbnIVrkTls2hBDqcduVI/export?format=csv"
 
 # --- ページ設定 ---
-st.set_page_config(page_title="特定日攻略(現役判別)", layout="wide")
-st.title("🎰 特定日攻略・狙い台分析ツール (設置状況判別版)")
+st.set_page_config(page_title="特定日攻略(修正版)", layout="wide")
+st.title("🎰 特定日攻略・狙い台分析ツール (設置状況・表示修正版)")
 
 # --- 1. データ読み込み ---
 @st.cache_data(ttl=600)
@@ -88,14 +88,16 @@ if df is None:
     st.stop()
 
 # --- ★重要: 最新機種マスターの作成 ---
-# フィルタリング前の「全データ」を使って、各台番号の最新日付の機種を特定する
+# 全データを使って、各台番号の最新日付の機種を特定する
+latest_machine_map = {}
 if "台番号" in df.columns and "機種" in df.columns:
-    # 台番号ごとに最新の日付を持つ行のインデックスを取得
-    latest_indices = df.groupby("台番号")["日付"].idxmax()
-    # その行から「台番号」と「機種」を抽出して辞書にする {555: "マイジャグV", 556: "ハナハナ"...}
-    latest_machine_map = df.loc[latest_indices].set_index("台番号")["機種"].to_dict()
-else:
-    latest_machine_map = {}
+    # 念のため台番号をint型に統一して処理
+    temp_df = df.copy()
+    temp_df["台番号"] = temp_df["台番号"].astype(int)
+    
+    # 台番号ごとに最新の日付を持つ行を取得
+    latest_indices = temp_df.groupby("台番号")["日付"].idxmax()
+    latest_machine_map = temp_df.loc[latest_indices].set_index("台番号")["機種"].to_dict()
 
 
 # --- サイドバー ---
@@ -197,7 +199,7 @@ with tab1:
             st.dataframe(zorome_metrics[["台ゾロ目タイプ", "勝率", "平均差枚", "機械割", "サンプル数"]].style.format({"勝率": "{:.1f}%", "平均差枚": "{:+,.0f}", "機械割": "{:.1f}%"}).background_gradient(subset=["機械割"], cmap="RdYlGn"), use_container_width=True)
 
 # ==========================================
-# 2. 鉄板台ランキング (★現役・撤去判別)
+# 2. 鉄板台ランキング (★修正箇所)
 # ==========================================
 with tab2:
     st.subheader(f"② {title_str} の鉄板台ランキング")
@@ -211,14 +213,20 @@ with tab2:
         if filtered.empty:
             st.warning("データなし")
         else:
-            # ★ここで判別ロジック適用
-            # 行ごとの機種が、最新マスター(latest_machine_map)と一致するか？
+            # 判別ロジック
             def check_status(row):
-                current = latest_machine_map.get(row["台番号"])
-                if current == row["機種"]:
-                    return "🟢現役" # Current
-                else:
-                    return "💀撤去" # Removed
+                # 台番号をintにして辞書から引く
+                try:
+                    t_no = int(row["台番号"])
+                    current = latest_machine_map.get(t_no)
+                    
+                    # 機種名の空白除去などで曖昧一致させる
+                    if current and str(current).strip() == str(row["機種"]).strip():
+                        return "🟢現役"
+                    else:
+                        return "💀撤去"
+                except:
+                    return "❓不明"
             
             filtered["設置"] = filtered.apply(check_status, axis=1)
             
@@ -228,18 +236,19 @@ with tab2:
             # 散布図
             fig = px.scatter(filtered, x="勝率", y="平均差枚", size="サンプル数", color="機械割", 
                              hover_name="表示名", text="台番号", color_continuous_scale="RdYlGn",
-                             symbol="設置", # 形を変える (丸=現役、ひし形=撤去など)
+                             symbol="設置",
                              title="勝率 vs 平均差枚 (🟢=現役 / 💀=撤去)")
             fig.add_hline(y=0, line_dash="dash"); fig.add_vline(x=50, line_dash="dash")
             st.plotly_chart(fig, use_container_width=True)
             
-            # リスト表示（設置カラムを先頭に）
+            # リスト表示 (★ここを修正しました)
             st.dataframe(
                 filtered[["設置", "台番号", "機種", "機械割", "勝率", "平均差枚", "平均G数", "サンプル数"]]
-                .sort_values(["設置", "機械割"], ascending=[True, False]) # 現役を上に、その中で機械割順
+                .sort_values(["設置", "機械割"], ascending=[True, False]) 
                 .style.format({"勝率": "{:.1f}%", "平均差枚": "{:+,.0f}", "平均G数": "{:,.0f}", "機械割": "{:.1f}%"})
                 .background_gradient(subset=["機械割", "平均差枚"], cmap="RdYlGn")
-                .applymap(lambda v: 'color: transparent' if v == "💀撤去" else '', subset=["設置"]), # 撤去は目立たせない工夫など
+                # 文字色をグレーにするだけに修正 (transparent=透明をやめました)
+                .applymap(lambda v: 'color: gray' if v == "💀撤去" else 'font-weight: bold', subset=["設置"]),
                 use_container_width=True
             )
 

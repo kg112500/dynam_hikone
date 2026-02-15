@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import plotly.express as px  # ★ここを復活させました！
 from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
 
 # --- ★設定: ユーザー指定のURL ---
@@ -89,7 +90,7 @@ if "台番号" in df.columns and "機種" in df.columns:
     except:
         pass
 
-# --- ★修正の要：Excel風テーブル設定 ---
+# --- Excel風テーブル設定 ---
 def display_excel_table(df_in, key_id):
     if df_in.empty:
         st.info("データがありません")
@@ -99,23 +100,19 @@ def display_excel_table(df_in, key_id):
     
     gb = GridOptionsBuilder.from_dataframe(df_show)
     
-    # 1. 基本設定: 全列にフィルターとリサイズを許可
-    # ★ suppressMenuHide=True: これが重要です！メニューアイコンを常時表示させます（スマホ対策）
+    # 基本設定
     gb.configure_default_column(
         resizable=True,
         filterable=True,
         sortable=True,
-        floatingFilter=True, # ヘッダー下の検索窓
-        suppressMenuHide=True, # ★カーソルを乗せなくてもメニュー「≡」を常に表示する
+        floatingFilter=True,   # 常に検索窓を表示
+        suppressMenuHide=True, # 常にメニューアイコンを表示
         minWidth=80,
     )
 
-    # 2. サイドバー（ツールパネル）の有効化
-    # これにより、表の右端に「Filters」「Columns」というタブが出現し、
-    # そこでExcelのように詳細な絞り込みが可能になります。
     gb.configure_side_bar(filters_panel=True, columns_panel=True, defaultToolPanel="")
 
-    # --- 条件付き書式 (JSコード) ---
+    # JSコード定義
     style_machine_wari = JsCode("""
     function(params) {
         if (params.value >= 105) { return {'color': 'white', 'backgroundColor': '#006400'}; }
@@ -139,7 +136,7 @@ def display_excel_table(df_in, key_id):
     }
     """)
 
-    # --- 列ごとの設定 ---
+    # 列設定
     if "設置" in df_show.columns:
         gb.configure_column("設置", pinned="left", width=90, cellStyle=style_status)
 
@@ -164,14 +161,6 @@ def display_excel_table(df_in, key_id):
                                 valueFormatter="x.toLocaleString()")
 
     grid_options = gb.build()
-
-    st.markdown("""
-    <small>
-    👇 **使い方**: 
-    1. 各列の「≡」ボタンを押すとフィルターメニューが出ます（常時表示設定済み）
-    2. 表の右端の「Filters」タブを開くと、詳細な絞り込みが可能です
-    </small>
-    """, unsafe_allow_html=True)
     
     AgGrid(
         df_show,
@@ -264,7 +253,6 @@ with tab1:
         st.subheader("🅰️ 通常の「台末尾 (0-9)」")
         if "台番号" in target_df.columns:
             matsubi_metrics = calculate_metrics(target_df, ["台末尾"])
-            # ここはシンプルに棒グラフのみ（集計表は見づらくなるため下の表で見てもらう）
             st.plotly_chart(px.bar(matsubi_metrics, x="台末尾", y="平均差枚", 
                          color="機械割", color_continuous_scale="RdYlGn",
                          text="機械割", title="末尾 (0-9) の平均差枚"), use_container_width=True)

@@ -286,32 +286,37 @@ with tab1:
             )
 
 # ==========================================
-# 2. 鉄板台ランキング (★足切り機能追加)
+# 2. 鉄板台ランキング (★機能追加)
 # ==========================================
 with tab2:
     st.subheader(f"② {title_str} の鉄板台ランキング")
     if "台番号" not in target_df.columns:
         st.error("台番号なし")
     else:
-        # スライダーを2つに増やす (サンプル数と最低差枚数)
-        col_s1, col_s2 = st.columns(2)
+        # 3カラムにして、スイッチなどを配置
+        col_s1, col_s2, col_s3 = st.columns([1, 1, 1])
         with col_s1:
             min_sample = st.slider("最低稼働回数", 1, 10, 1, key="tab2_slider_sample")
         with col_s2:
-            # ★ここが新機能: デフォルト0枚以上の台だけ表示
-            min_diff_map = st.slider("マップ表示: 最低平均差枚", -1000, 2000, 0, step=100, key="tab2_slider_diff", help="マップがごちゃつくのを防ぐため、この枚数以下の台は非表示にします")
+            min_diff_map = st.slider("最低平均差枚", -1000, 2000, 0, step=100, key="tab2_slider_diff", help="これ以下の差枚数の台は表示しません")
+        with col_s3:
+            # ★新機能: 撤去台を除外するスイッチ
+            st.write("") # レイアウト調整用
+            st.write("") 
+            only_active = st.checkbox("🟢 現役台のみ表示", value=True, help="チェックを入れると、すでに撤去された台は表示しません")
 
         daiban_metrics = calculate_metrics(target_df, ["台番号", "機種"])
         
-        # フィルタリング適用 (サンプル数 AND 平均差枚数)
+        # 1. 数値でフィルタリング
         filtered = daiban_metrics[
             (daiban_metrics["サンプル数"] >= min_sample) & 
-            (daiban_metrics["平均差枚"] >= min_diff_map)  # ★足切り実行
+            (daiban_metrics["平均差枚"] >= min_diff_map)
         ].copy()
         
         if filtered.empty:
-            st.warning("条件に合うデータがありません。（スライダーを調整してください）")
+            st.warning("条件に合うデータがありません。")
         else:
+            # 2. 設置状況を判定
             def check_status(row):
                 try:
                     t_no = int(row["台番号"])
@@ -325,19 +330,25 @@ with tab2:
             
             filtered["設置"] = filtered.apply(check_status, axis=1)
             
-            fig = px.scatter(filtered, x="勝率", y="平均差枚", size="サンプル数", color="機械割", 
-                             hover_name="台番号", text="台番号", color_continuous_scale="RdYlGn",
-                             symbol="設置", title="勝率 vs 平均差枚 (🟢=現役 / 💀=撤去)")
-            
-            # 基準線 (0ラインと50%ライン)
-            fig.add_hline(y=0, line_dash="dash", line_color="gray")
-            fig.add_vline(x=50, line_dash="dash", line_color="gray")
-            st.plotly_chart(fig, use_container_width=True)
-            
-            # 下の表は全データを表示したい場合もあるかもしれないが、統一感のためここも連動させる
-            disp_df = filtered[["設置", "台番号", "機種", "機械割", "勝率", "平均差枚", "平均G数", "サンプル数"]].sort_values(["設置", "機械割"], ascending=[True, False])
-            
-            display_filterable_table(disp_df, key_id="tab2_ranking")
+            # 3. ★スイッチがONなら「撤去」を除外
+            if only_active:
+                filtered = filtered[filtered["設置"] == "🟢現役"]
+
+            if filtered.empty:
+                 st.warning("条件に合う現役台がありません。")
+            else:
+                # グラフ描画
+                fig = px.scatter(filtered, x="勝率", y="平均差枚", size="サンプル数", color="機械割", 
+                                 hover_name="台番号", text="台番号", color_continuous_scale="RdYlGn",
+                                 symbol="設置", title="勝率 vs 平均差枚")
+                
+                fig.add_hline(y=0, line_dash="dash", line_color="gray")
+                fig.add_vline(x=50, line_dash="dash", line_color="gray")
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # テーブル表示
+                disp_df = filtered[["設置", "台番号", "機種", "機械割", "勝率", "平均差枚", "平均G数", "サンプル数"]].sort_values(["設置", "機械割"], ascending=[True, False])
+                display_filterable_table(disp_df, key_id="tab2_ranking")
 
 # ==========================================
 # 3. 機種別

@@ -12,51 +12,6 @@ MAPPING_URL = "https://docs.google.com/spreadsheets/d/1wIdronWDW8xK0jDepQfWbFPBb
 
 # --- ページ設定 ---
 st.set_page_config(page_title="ダイナム彦根分析ツール", layout="wide")
-
-# ★修正: サイドバーボタンを守るための安全なCSS
-hide_st_style = """
-    <style>
-    /* --- 1. 不要なものを消す --- */
-    
-    /* ヘッダー上部の虹色の線を消す */
-    [data-testid="stDecoration"] {display: none;}
-    
-    /* ヘッダー右側のツールバー (三点リーダー、GitHub、デプロイボタンなど) を非表示 */
-    [data-testid="stToolbar"] {visibility: hidden;}
-    
-    /* PC版フッター (Made with Streamlit) を非表示 */
-    footer {visibility: hidden;}
-    
-    /* スマホ版フッター (Hosted with Streamlit) を非表示 */
-    div[class*="viewerBadge"] {display: none !important;}
-    
-    /* 画面下部のStreamlit関連リンクを強制非表示 */
-    a[href*="streamlit.app"] {display: none !important;}
-
-    /* --- 2. 必要なものを守る --- */
-    
-    /* サイドバーを開閉するボタン (左上の矢印) は絶対に表示させる */
-    [data-testid="collapsedControl"] {
-        visibility: visible !important;
-        display: block !important;
-        z-index: 999999 !important; /* 最前面に表示 */
-    }
-    
-    /* ヘッダー領域自体はクリック可能にしておく (サイドバーボタンのため) */
-    header[data-testid="stHeader"] {
-        visibility: visible !important;
-        /* 背景を白にしてボタンを見やすくする（好みで transparent にしてもOK） */
-        background-color: rgba(255, 255, 255, 1) !important; 
-    }
-    
-    /* コンテンツがヘッダーに隠れないように余白調整 */
-    .block-container {
-        padding-top: 3rem !important;
-    }
-    </style>
-"""
-st.markdown(hide_st_style, unsafe_allow_html=True)
-
 st.title("🎰 ダイナム彦根分析ツール (Pro版)")
 
 # --- 1. データ読み込み ---

@@ -25,7 +25,6 @@ def load_data():
         except FileNotFoundError:
             return None
 
-    # 列名の正規化
     df.columns = df.columns.str.strip()
     rename_map = {
         "台番号": ["台番", "No.", "No"],
@@ -41,7 +40,6 @@ def load_data():
                     df.rename(columns={found: std}, inplace=True)
                     break
 
-    # 数値化
     numeric_cols = ["台番号", "総差枚", "G数"]
     for col in df.columns:
         if any(t in col for t in numeric_cols):
@@ -54,25 +52,19 @@ def load_data():
     if "日付" not in df.columns or "総差枚" not in df.columns:
         return None
 
-    # 日付処理
     df["日付"] = pd.to_datetime(df["日付"])
     df["日付str"] = df["日付"].dt.strftime("%Y-%m-%d")
-    
-    # イベント属性
     df["DayNum"] = df["日付"].dt.day
     df["Month"] = df["日付"].dt.month
     df["末尾"] = df["DayNum"] % 10 
-    
-    # ゾロ目判定
     df["is_Zorome"] = (df["DayNum"].isin([11, 22])) | (df["Month"] == df["DayNum"])
     
-    # 台番号属性
     if "台番号" in df.columns:
         df["台末尾"] = df["台番号"] % 10
         def get_machine_zorome(num):
             s = str(num)
             if len(s) >= 2 and s[-1] == s[-2]:
-                return s[-2:] # "11", "22" などを返す
+                return s[-2:]
             return "通常" 
         df["台ゾロ目タイプ"] = df["台番号"].apply(get_machine_zorome)
     else:
@@ -98,6 +90,57 @@ if "台番号" in df.columns and "機種" in df.columns:
     except:
         pass
 
+# --- ★新機能: 高機能テーブル表示関数 ---
+def display_enhanced_table(df_in, key_id):
+    """
+    検索フィルターと幅調整機能がついたテーブルを表示する関数
+    """
+    if df_in.empty:
+        st.info("データがありません")
+        return
+
+    # コントロールエリア (検索窓と幅切替)
+    c1, c2 = st.columns([3, 1])
+    with c1:
+        # 1. 検索機能
+        search_term = st.text_input(f"🔍 表内検索", placeholder="機種名、台番など...", key=f"search_{key_id}")
+    with c2:
+        # 2. 幅調整機能
+        use_wide = st.checkbox("幅自動", value=True, key=f"wide_{key_id}", help="チェックを外すと横スクロールモードになります")
+
+    # データのフィルタリング処理
+    df_show = df_in.copy()
+    if search_term:
+        # 全カラムを文字列化して、検索ワードが含まれる行だけ抽出
+        mask = df_show.astype(str).apply(lambda x: x.str.contains(search_term, case=False, na=False)).any(axis=1)
+        df_show = df_show[mask]
+
+    # --- スタイリング適用 ---
+    # 表示フォーマット定義
+    format_map = {
+        "勝率": "{:.1f}%",
+        "平均差枚": "{:+,.0f}",
+        "平均G数": "{:,.0f}",
+        "機械割": "{:.1f}%"
+    }
+    # データフレームに存在するカラムだけフォーマット適用
+    current_fmt = {k: v for k, v in format_map.items() if k in df_show.columns}
+    
+    styler = df_show.style.format(current_fmt)
+    
+    # グラデーション (機械割と平均差枚があれば)
+    grad_cols = [c for c in ["機械割", "平均差枚"] if c in df_show.columns]
+    if grad_cols:
+        styler = styler.background_gradient(subset=grad_cols, cmap="RdYlGn")
+    
+    # 設置状況の色分け (撤去はグレー)
+    if "設置" in df_show.columns:
+        styler = styler.applymap(lambda v: 'color: gray' if v == "💀撤去" else 'font-weight: bold', subset=["設置"])
+
+    # テーブル描画
+    st.dataframe(styler, use_container_width=use_wide)
+
+
 # --- サイドバー ---
 st.sidebar.header("🎯 戦略設定")
 
@@ -105,7 +148,6 @@ if st.sidebar.button("🔄 データを最新に更新"):
     st.cache_data.clear()
     st.rerun()
 
-# 期間フィルタ
 min_d, max_d = df["日付"].min(), df["日付"].max()
 dates = st.sidebar.date_input("分析期間", [min_d, max_d])
 if len(dates) == 2:
@@ -167,7 +209,7 @@ tab1, tab2, tab3, tab4 = st.tabs([
 ])
 
 # ==========================================
-# 1. 特定日 × 台の末尾 & 台番ゾロ目 (★完全統一)
+# 1. 特定日 × 台の末尾 & 台番ゾロ目
 # ==========================================
 with tab1:
     col1, col2 = st.columns(2)
@@ -185,11 +227,10 @@ with tab1:
             fig.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
             st.plotly_chart(fig, use_container_width=True)
             
-            st.dataframe(
-                matsubi_metrics[["台末尾", "勝率", "平均差枚", "平均G数", "機械割", "サンプル数"]]
-                .style.format({"勝率": "{:.1f}%", "平均差枚": "{:+,.0f}", "平均G数": "{:,.0f}", "機械割": "{:.1f}%"})
-                .background_gradient(subset=["平均差枚", "機械割"], cmap="RdYlGn"),
-                use_container_width=True
+            # ★新関数で表示 (検索・幅調整付き)
+            display_enhanced_table(
+                matsubi_metrics[["台末尾", "勝率", "平均差枚", "平均G数", "機械割", "サンプル数"]],
+                key_id="tab1_norm"
             )
 
     # --- B. 台番ゾロ目 ---
@@ -208,12 +249,10 @@ with tab1:
             fig2.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
             st.plotly_chart(fig2, use_container_width=True)
             
-            # ★ここを左側と完全に一致させました（平均G数追加）
-            st.dataframe(
-                zorome_metrics[["台ゾロ目タイプ", "勝率", "平均差枚", "平均G数", "機械割", "サンプル数"]]
-                .style.format({"勝率": "{:.1f}%", "平均差枚": "{:+,.0f}", "平均G数": "{:,.0f}", "機械割": "{:.1f}%"})
-                .background_gradient(subset=["平均差枚", "機械割"], cmap="RdYlGn"),
-                use_container_width=True
+            # ★新関数で表示
+            display_enhanced_table(
+                zorome_metrics[["台ゾロ目タイプ", "勝率", "平均差枚", "平均G数", "機械割", "サンプル数"]],
+                key_id="tab1_zorome"
             )
 
 # ==========================================
@@ -252,14 +291,11 @@ with tab2:
             fig.add_hline(y=0, line_dash="dash"); fig.add_vline(x=50, line_dash="dash")
             st.plotly_chart(fig, use_container_width=True)
             
-            st.dataframe(
-                filtered[["設置", "台番号", "機種", "機械割", "勝率", "平均差枚", "平均G数", "サンプル数"]]
-                .sort_values(["設置", "機械割"], ascending=[True, False]) 
-                .style.format({"勝率": "{:.1f}%", "平均差枚": "{:+,.0f}", "平均G数": "{:,.0f}", "機械割": "{:.1f}%"})
-                .background_gradient(subset=["機械割", "平均差枚"], cmap="RdYlGn")
-                .applymap(lambda v: 'color: gray' if v == "💀撤去" else 'font-weight: bold', subset=["設置"]),
-                use_container_width=True
-            )
+            # 表示用データ作成
+            disp_df = filtered[["設置", "台番号", "機種", "機械割", "勝率", "平均差枚", "平均G数", "サンプル数"]].sort_values(["設置", "機械割"], ascending=[True, False])
+            
+            # ★新関数で表示
+            display_enhanced_table(disp_df, key_id="tab2_ranking")
 
 # ==========================================
 # 3. 機種別
@@ -276,7 +312,12 @@ with tab3:
                      color_continuous_scale="RdYlGn", text="機械割")
         fig.add_vline(x=100, line_dash="dash", line_color="red")
         st.plotly_chart(fig, use_container_width=True)
-        st.dataframe(model_metrics[["機種", "機械割", "勝率", "平均差枚", "平均G数", "サンプル数"]].style.format({"勝率": "{:.1f}%", "平均差枚": "{:+,.0f}", "平均G数": "{:,.0f}", "機械割": "{:.1f}%"}).background_gradient(subset=["機械割"], cmap="RdYlGn"), use_container_width=True)
+        
+        # ★新関数で表示
+        display_enhanced_table(
+            model_metrics[["機種", "機械割", "勝率", "平均差枚", "平均G数", "サンプル数"]],
+            key_id="tab3_model"
+        )
 
 # ==========================================
 # 4. 機種 × 末尾

@@ -13,13 +13,28 @@ MAPPING_URL = "https://docs.google.com/spreadsheets/d/1wIdronWDW8xK0jDepQfWbFPBb
 # --- ページ設定 ---
 st.set_page_config(page_title="ダイナム彦根分析ツール", layout="wide")
 
-# ★修正: 安全なCSS（フッターとメニューだけ消して、ヘッダー/サイドバーボタンは残す）
+# ★修正: 強力なCSS注入 (右上のアイコン群とフッターを完全に消す)
 hide_st_style = """
-            <style>
-            #MainMenu {visibility: hidden;}
-            footer {visibility: hidden;}
-            </style>
-            """
+    <style>
+    /* 1. 右上のハンバーガーメニュー (三点リーダー) を消す */
+    #MainMenu {visibility: hidden;}
+    
+    /* 2. フッター (Made with Streamlit) を消す */
+    footer {visibility: hidden;}
+    
+    /* 3. 右上のデプロイボタン (GitHubアイコンやロケット) を消す */
+    .stDeployButton {display: none;}
+    
+    /* 4. 上部の虹色の装飾線を消す */
+    [data-testid="stDecoration"] {display: none;}
+    
+    /* 5. 右上のツールバー全体を非表示 (念のため) */
+    [data-testid="stToolbar"] {visibility: hidden;}
+
+    /* 6. スマホ版のフッターバッジ (Hosted with Streamlit) を消す */
+    .viewerBadge_container__1QSob {display: none !important;}
+    </style>
+"""
 st.markdown(hide_st_style, unsafe_allow_html=True)
 
 st.title("🎰 ダイナム彦根分析ツール (Pro版)")

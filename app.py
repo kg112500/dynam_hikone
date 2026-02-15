@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from st_aggrid import AgGrid, GridOptionsBuilder, JsCode # ★高機能テーブル用ライブラリ
+from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
 
 # --- ★設定: ユーザー指定のURL ---
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1wIdronWDW8xK0jDepQfWbFPBbnIVrkTls2hBDqcduVI/export?format=csv"
@@ -91,96 +91,92 @@ if "台番号" in df.columns and "機種" in df.columns:
     except:
         pass
 
-# --- ★新機能: Excel風テーブル表示関数 (AgGrid) ---
+# --- ★修正済み: Excel風テーブル表示関数 ---
 def display_excel_table(df_in, key_id):
     if df_in.empty:
         st.info("データがありません")
         return
 
-    # 表示用データの作成（フォーマット済み文字列にするのではなく、数値のまま渡してAgGrid側で表示を変える）
     df_show = df_in.copy()
     
-    # Grid設定のビルド
     gb = GridOptionsBuilder.from_dataframe(df_show)
     
     # デフォルト設定 (全列共通)
     gb.configure_default_column(
-        resizable=True,  # 幅変更OK
-        filterable=True, # フィルターOK
-        sortable=True,   # ソートOK
-        minWidth=80,     # 最小幅
+        resizable=True,
+        filterable=True,
+        sortable=True,
+        minWidth=80,
     )
 
-    # --- 列ごとの個別設定 ---
-    
-    # 1. 設置状況 (固定・色付け)
-    if "設置" in df_show.columns:
-        gb.configure_column("設置", pinned="left", width=90) # 左に固定
-
-    # 2. 機種名 (幅広め・左固定推奨)
-    if "機種" in df_show.columns:
-        gb.configure_column("機種", minWidth=150)
-
-    # 3. 数値カラム (フォーマット設定)
-    # 勝率: 50.0% のように表示
-    if "勝率" in df_show.columns:
-        gb.configure_column("勝率", type=["numericColumn"], precision=1, 
-                            valueFormatter="x + '%'") # %をつける
-
-    # 機械割: 105.0% のように表示
-    if "機械割" in df_show.columns:
-        gb.configure_column("機械割", type=["numericColumn"], precision=1, 
-                            valueFormatter="x + '%'")
-
-    # 差枚・G数: 3桁カンマ区切り
-    for col in ["平均差枚", "総差枚", "平均G数", "総G数", "サンプル数", "台番号"]:
-        if col in df_show.columns:
-            gb.configure_column(col, type=["numericColumn"], 
-                                valueFormatter="x.toLocaleString()") # カンマ区切り
-
-    # --- 条件付き書式 (JSコード注入) ---
-    # 機械割が高いと緑色にする設定
-    # ※機械割が100を超えたら緑、105超えで濃い緑、というロジック
-    jscode = JsCode("""
+    # --- 条件付き書式の定義 (JSコード) ---
+    # 1. 機械割の色付け
+    style_machine_wari = JsCode("""
     function(params) {
-        if (params.colDef.field === '機械割') {
-            if (params.value >= 105) {
-                return {'color': 'white', 'backgroundColor': '#006400'}; // 濃い緑
-            } else if (params.value >= 100) {
-                return {'backgroundColor': '#90EE90'}; // 薄い緑
-            }
-        }
-        if (params.colDef.field === '平均差枚') {
-             if (params.value > 0) {
-                return {'color': 'blue'};
-            } else {
-                return {'color': 'red'};
-            }
-        }
-        if (params.colDef.field === '設置') {
-            if (params.value === '💀撤去') {
-                return {'color': 'gray'};
-            } else {
-                return {'fontWeight': 'bold'};
-            }
-        }
+        if (params.value >= 105) { return {'color': 'white', 'backgroundColor': '#006400'}; }
+        if (params.value >= 100) { return {'backgroundColor': '#90EE90'}; }
         return null;
     }
     """)
-    gb.configure_grid_options(getRowStyle=jscode) # 行全体ではなくセルごとに適用するにはconfigure_columnだが今回は簡易的に
 
-    # オプションの確定
+    # 2. 差枚の色付け (プラス青、マイナス赤)
+    style_diff = JsCode("""
+    function(params) {
+        if (params.value > 0) { return {'color': 'blue', 'fontWeight': 'bold'}; }
+        if (params.value < 0) { return {'color': 'red'}; }
+        return null;
+    }
+    """)
+
+    # 3. 設置状況の色付け (撤去はグレー)
+    style_status = JsCode("""
+    function(params) {
+        if (params.value === '💀撤去') { return {'color': 'gray'}; }
+        return {'fontWeight': 'bold'};
+    }
+    """)
+
+    # --- 列ごとの個別設定 ---
+    
+    # 設置
+    if "設置" in df_show.columns:
+        gb.configure_column("設置", pinned="left", width=90, cellStyle=style_status)
+
+    # 機種
+    if "機種" in df_show.columns:
+        gb.configure_column("機種", minWidth=150)
+
+    # 勝率
+    if "勝率" in df_show.columns:
+        gb.configure_column("勝率", type=["numericColumn"], precision=1, 
+                            valueFormatter="x + '%'")
+
+    # 機械割 (スタイル適用)
+    if "機械割" in df_show.columns:
+        gb.configure_column("機械割", type=["numericColumn"], precision=1, 
+                            valueFormatter="x + '%'", cellStyle=style_machine_wari)
+
+    # 平均差枚 (スタイル適用)
+    if "平均差枚" in df_show.columns:
+        gb.configure_column("平均差枚", type=["numericColumn"], 
+                            valueFormatter="x.toLocaleString()", cellStyle=style_diff)
+
+    # その他の数値カラム
+    for col in ["総差枚", "平均G数", "総G数", "サンプル数", "台番号"]:
+        if col in df_show.columns:
+            gb.configure_column(col, type=["numericColumn"], 
+                                valueFormatter="x.toLocaleString()")
+
     grid_options = gb.build()
 
-    # 表示
-    st.markdown("👇 **ヘッダーをクリックして並び替え・フィルターができます**")
+    st.markdown("👇 **ヘッダーの「≡」でフィルター、「文字」クリックで並び替えができます**")
     AgGrid(
         df_show,
         gridOptions=grid_options,
-        allow_unsafe_jscode=True, # JSを使うために必要
+        allow_unsafe_jscode=True,
         enable_enterprise_modules=False,
-        height=400, # 表の高さ
-        fit_columns_on_grid_load=False, # 列幅を自動で詰めない（スクロールさせる）
+        height=400,
+        fit_columns_on_grid_load=False,
         key=key_id
     )
 
@@ -267,7 +263,6 @@ with tab1:
                          text="機械割", title="末尾 (0-9) の平均差枚")
             st.plotly_chart(fig, use_container_width=True)
             
-            # Excel風テーブル表示
             display_excel_table(
                 matsubi_metrics[["台末尾", "勝率", "平均差枚", "平均G数", "機械割", "サンプル数"]],
                 key_id="tab1_norm"

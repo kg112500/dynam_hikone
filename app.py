@@ -91,7 +91,7 @@ if "台番号" in df.columns and "機種" in df.columns:
     except:
         pass
 
-# --- ★修正済み: Excel風テーブル表示関数 ---
+# --- Excel風テーブル表示関数 ---
 def display_excel_table(df_in, key_id):
     if df_in.empty:
         st.info("データがありません")
@@ -101,16 +101,18 @@ def display_excel_table(df_in, key_id):
     
     gb = GridOptionsBuilder.from_dataframe(df_show)
     
-    # デフォルト設定 (全列共通)
+    # デフォルト設定
     gb.configure_default_column(
         resizable=True,
         filterable=True,
         sortable=True,
         minWidth=80,
     )
+    
+    # ★変更点: フローティングフィルターを有効化（ヘッダーの下に検索窓が出る）
+    gb.configure_grid_options(enableFloatingFilter=True)
 
-    # --- 条件付き書式の定義 (JSコード) ---
-    # 1. 機械割の色付け
+    # --- 条件付き書式 (JSコード) ---
     style_machine_wari = JsCode("""
     function(params) {
         if (params.value >= 105) { return {'color': 'white', 'backgroundColor': '#006400'}; }
@@ -119,7 +121,6 @@ def display_excel_table(df_in, key_id):
     }
     """)
 
-    # 2. 差枚の色付け (プラス青、マイナス赤)
     style_diff = JsCode("""
     function(params) {
         if (params.value > 0) { return {'color': 'blue', 'fontWeight': 'bold'}; }
@@ -128,7 +129,6 @@ def display_excel_table(df_in, key_id):
     }
     """)
 
-    # 3. 設置状況の色付け (撤去はグレー)
     style_status = JsCode("""
     function(params) {
         if (params.value === '💀撤去') { return {'color': 'gray'}; }
@@ -137,26 +137,21 @@ def display_excel_table(df_in, key_id):
     """)
 
     # --- 列ごとの個別設定 ---
-    
-    # 設置
     if "設置" in df_show.columns:
         gb.configure_column("設置", pinned="left", width=90, cellStyle=style_status)
 
-    # 機種
     if "機種" in df_show.columns:
         gb.configure_column("機種", minWidth=150)
 
-    # 勝率
     if "勝率" in df_show.columns:
         gb.configure_column("勝率", type=["numericColumn"], precision=1, 
                             valueFormatter="x + '%'")
 
-    # 機械割 (スタイル適用)
     if "機械割" in df_show.columns:
         gb.configure_column("機械割", type=["numericColumn"], precision=1, 
                             valueFormatter="x + '%'", cellStyle=style_machine_wari)
 
-    # 平均差枚 (スタイル適用)
+    # 平均差枚（カンマ区切り・整数）
     if "平均差枚" in df_show.columns:
         gb.configure_column("平均差枚", type=["numericColumn"], 
                             valueFormatter="x.toLocaleString()", cellStyle=style_diff)
@@ -169,7 +164,7 @@ def display_excel_table(df_in, key_id):
 
     grid_options = gb.build()
 
-    st.markdown("👇 **ヘッダーの「≡」でフィルター、「文字」クリックで並び替えができます**")
+    st.markdown("👇 **各列の検索ボックスで絞り込みができます**")
     AgGrid(
         df_show,
         gridOptions=grid_options,
@@ -229,6 +224,10 @@ def calculate_metrics(dataframe, group_cols):
         lambda x: ((x["総G数"]*3 + x["総差枚"]) / (x["総G数"]*3) * 100) if x["総G数"] > 0 else 0, 
         axis=1
     ).round(1)
+    
+    # ★変更点: 平均値を整数型に変換 (四捨五入してint化)
+    agg["平均差枚"] = agg["平均差枚"].fillna(0).round(0).astype(int)
+    agg["平均G数"] = agg["平均G数"].fillna(0).round(0).astype(int)
     
     return agg
 

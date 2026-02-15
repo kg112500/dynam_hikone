@@ -6,8 +6,8 @@ import plotly.express as px
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1wIdronWDW8xK0jDepQfWbFPBbnIVrkTls2hBDqcduVI/export?format=csv"
 
 # --- ページ設定 ---
-st.set_page_config(page_title="特定日攻略(完全修正版)", layout="wide")
-st.title("🎰 特定日攻略・狙い台分析ツール (データ復旧版)")
+st.set_page_config(page_title="特定日攻略(完全版)", layout="wide")
+st.title("🎰 特定日攻略・狙い台分析ツール (表示統一版)")
 
 # --- 1. データ読み込み ---
 @st.cache_data(ttl=600)
@@ -167,7 +167,7 @@ tab1, tab2, tab3, tab4 = st.tabs([
 ])
 
 # ==========================================
-# 1. 特定日 × 台の末尾 & 台番ゾロ目 (修正済み)
+# 1. 特定日 × 台の末尾 & 台番ゾロ目 (★完全統一)
 # ==========================================
 with tab1:
     col1, col2 = st.columns(2)
@@ -185,7 +185,6 @@ with tab1:
             fig.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
             st.plotly_chart(fig, use_container_width=True)
             
-            # リスト表示 (平均G数などを確実に含める)
             st.dataframe(
                 matsubi_metrics[["台末尾", "勝率", "平均差枚", "平均G数", "機械割", "サンプル数"]]
                 .style.format({"勝率": "{:.1f}%", "平均差枚": "{:+,.0f}", "平均G数": "{:,.0f}", "機械割": "{:.1f}%"})
@@ -209,10 +208,11 @@ with tab1:
             fig2.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
             st.plotly_chart(fig2, use_container_width=True)
             
+            # ★ここを左側と同じ項目・フォーマット・色設定にしました
             st.dataframe(
                 zorome_metrics[["台ゾロ目タイプ", "勝率", "平均差枚", "平均G数", "機械割", "サンプル数"]]
                 .style.format({"勝率": "{:.1f}%", "平均差枚": "{:+,.0f}", "平均G数": "{:,.0f}", "機械割": "{:.1f}%"})
-                .background_gradient(subset=["機械割"], cmap="RdYlGn"),
+                .background_gradient(subset=["平均差枚", "機械割"], cmap="RdYlGn"),
                 use_container_width=True
             )
 

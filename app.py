@@ -101,17 +101,16 @@ def display_excel_table(df_in, key_id):
     
     gb = GridOptionsBuilder.from_dataframe(df_show)
     
-    # デフォルト設定
+    # ★変更点: default設定の中に floatingFilter=True を移動させました
+    # これで「全ての列」に強制的に検索窓が出ます
     gb.configure_default_column(
         resizable=True,
         filterable=True,
         sortable=True,
+        floatingFilter=True, # <--- ここが重要です！
         minWidth=80,
     )
     
-    # ★重要: フローティングフィルター（ヘッダー下の検索窓）をON
-    gb.configure_grid_options(enableFloatingFilter=True)
-
     # --- 条件付き書式 (JSコード) ---
     style_machine_wari = JsCode("""
     function(params) {
@@ -151,6 +150,7 @@ def display_excel_table(df_in, key_id):
         gb.configure_column("機械割", type=["numericColumn"], precision=1, 
                             valueFormatter="x + '%'", cellStyle=style_machine_wari)
 
+    # 平均差枚（カンマ区切り・整数）
     if "平均差枚" in df_show.columns:
         gb.configure_column("平均差枚", type=["numericColumn"], 
                             valueFormatter="x.toLocaleString()", cellStyle=style_diff)
@@ -162,15 +162,13 @@ def display_excel_table(df_in, key_id):
 
     grid_options = gb.build()
 
-    # ★スマホ用CSS調整: メニューアイコン(≡)を常に強制表示させる
+    # スマホ用CSS: ヘッダー周りの微調整
     custom_css = {
-        ".ag-header-cell-menu-button": {
-            "display": "block !important",
-            "opacity": "1 !important"
-        }
+        ".ag-header-cell-label": {"justify-content": "center"},
+        ".ag-header-cell-menu-button": {"display": "block !important", "opacity": "1 !important"}
     }
 
-    st.markdown("👇 **「≡」でメニュー、「下の枠」で直接検索できます**")
+    st.markdown("👇 **項目名の下にある「白い枠」に入力すると絞り込めます**")
     AgGrid(
         df_show,
         gridOptions=grid_options,
@@ -178,8 +176,8 @@ def display_excel_table(df_in, key_id):
         enable_enterprise_modules=False,
         height=400,
         fit_columns_on_grid_load=False,
-        theme="ag-theme-alpine", # ★Excelっぽいテーマを明示的に指定
-        custom_css=custom_css,   # ★CSSを注入
+        theme="ag-theme-alpine", 
+        custom_css=custom_css,
         key=key_id
     )
 
@@ -233,7 +231,7 @@ def calculate_metrics(dataframe, group_cols):
         axis=1
     ).round(1)
     
-    # ★平均値を整数化 (小数点なし)
+    # ★平均値を整数化
     agg["平均差枚"] = agg["平均差枚"].fillna(0).round(0).astype(int)
     agg["平均G数"] = agg["平均G数"].fillna(0).round(0).astype(int)
     

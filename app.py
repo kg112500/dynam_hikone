@@ -13,70 +13,45 @@ MAPPING_URL = "https://docs.google.com/spreadsheets/d/1wIdronWDW8xK0jDepQfWbFPBb
 # --- ページ設定 ---
 st.set_page_config(page_title="ダイナム彦根分析ツール", layout="wide")
 
-# ★修正: 最強の非表示CSS
-# ヘッダー自体は消さずに「透明」にし、右側のアイコン群だけを消す戦略です
+# ★修正: サイドバーボタンを守るための安全なCSS
 hide_st_style = """
     <style>
-    /* -------------------------------------------------------
-       1. ヘッダー周りの制御 (サイドバーボタンを残すため)
-       ------------------------------------------------------- */
+    /* --- 1. 不要なものを消す --- */
     
-    /* ヘッダー全体を透明にし、クリック判定をなくす */
-    header[data-testid="stHeader"] {
-        background: transparent !important;
-        backdrop-filter: none !important;
-        pointer-events: none !important;
-    }
-
-    /* 上部の虹色の線を消す */
-    [data-testid="stDecoration"] {
-        display: none !important;
-    }
-
-    /* ヘッダー右側のツールバー (三点リーダー、GitHub、デプロイボタン) を消す */
-    [data-testid="stToolbar"] {
-        display: none !important;
-        visibility: hidden !important;
-    }
+    /* ヘッダー上部の虹色の線を消す */
+    [data-testid="stDecoration"] {display: none;}
     
-    /* ヘッダー右上のステータス (Running...) を消す */
-    [data-testid="stStatusWidget"] {
-        display: none !important;
-    }
+    /* ヘッダー右側のツールバー (三点リーダー、GitHub、デプロイボタンなど) を非表示 */
+    [data-testid="stToolbar"] {visibility: hidden;}
+    
+    /* PC版フッター (Made with Streamlit) を非表示 */
+    footer {visibility: hidden;}
+    
+    /* スマホ版フッター (Hosted with Streamlit) を非表示 */
+    div[class*="viewerBadge"] {display: none !important;}
+    
+    /* 画面下部のStreamlit関連リンクを強制非表示 */
+    a[href*="streamlit.app"] {display: none !important;}
 
-    /* ★重要: サイドバー開閉ボタンだけは表示させ、クリック可能にする */
+    /* --- 2. 必要なものを守る --- */
+    
+    /* サイドバーを開閉するボタン (左上の矢印) は絶対に表示させる */
     [data-testid="collapsedControl"] {
-        display: block !important;
         visibility: visible !important;
-        pointer-events: auto !important; /* クリック判定を復活 */
-        z-index: 100000 !important;      /* 最前面に持ってくる */
-        color: rgba(0,0,0,0.5) !important; /* 少し見やすくする */
-    }
-
-    /* -------------------------------------------------------
-       2. フッター周りの制御 (スマホ含む)
-       ------------------------------------------------------- */
-    
-    /* PC版フッター (Made with Streamlit) */
-    footer {
-        display: none !important;
-        visibility: hidden !important;
-    }
-
-    /* スマホ版フッター (Hosted with Streamlit) のコンテナ */
-    /* クラス名がランダムに変わるため、属性セレクタで前方一致指定 */
-    div[class*="viewerBadge"] {
-        display: none !important;
+        display: block !important;
+        z-index: 999999 !important; /* 最前面に表示 */
     }
     
-    /* 念のための追加: 画面下部にあるリンク要素を強制非表示 */
-    a[href*="streamlit.app"] {
-        display: none !important;
+    /* ヘッダー領域自体はクリック可能にしておく (サイドバーボタンのため) */
+    header[data-testid="stHeader"] {
+        visibility: visible !important;
+        /* 背景を白にしてボタンを見やすくする（好みで transparent にしてもOK） */
+        background-color: rgba(255, 255, 255, 1) !important; 
     }
     
-    /* 余白の調整 (ヘッダーが浮いている分、コンテンツが上に行き過ぎないように) */
+    /* コンテンツがヘッダーに隠れないように余白調整 */
     .block-container {
-        padding-top: 2rem !important;
+        padding-top: 3rem !important;
     }
     </style>
 """

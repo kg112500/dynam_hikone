@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
 from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
 
 # --- ★設定: ユーザー指定のURL ---
@@ -8,7 +7,7 @@ SHEET_URL = "https://docs.google.com/spreadsheets/d/1wIdronWDW8xK0jDepQfWbFPBbnI
 
 # --- ページ設定 ---
 st.set_page_config(page_title="ダイナム彦根分析ツール", layout="wide")
-st.title("🎰 ダイナム彦根分析ツール (Excel機能版)")
+st.title("🎰 ダイナム彦根分析ツール (Pro版)")
 
 # --- 1. データ読み込み ---
 @st.cache_data(ttl=600)
@@ -54,7 +53,6 @@ def load_data():
         return None
 
     df["日付"] = pd.to_datetime(df["日付"])
-    df["日付str"] = df["日付"].dt.strftime("%Y-%m-%d")
     df["DayNum"] = df["日付"].dt.day
     df["Month"] = df["日付"].dt.month
     df["末尾"] = df["DayNum"] % 10 
@@ -91,7 +89,7 @@ if "台番号" in df.columns and "機種" in df.columns:
     except:
         pass
 
-# --- Excel風テーブル表示関数 ---
+# --- ★修正の要：Excel風テーブル設定 ---
 def display_excel_table(df_in, key_id):
     if df_in.empty:
         st.info("データがありません")
@@ -101,16 +99,22 @@ def display_excel_table(df_in, key_id):
     
     gb = GridOptionsBuilder.from_dataframe(df_show)
     
-    # ★変更点: default設定の中に floatingFilter=True を移動させました
-    # これで「全ての列」に強制的に検索窓が出ます
+    # 1. 基本設定: 全列にフィルターとリサイズを許可
+    # ★ suppressMenuHide=True: これが重要です！メニューアイコンを常時表示させます（スマホ対策）
     gb.configure_default_column(
         resizable=True,
         filterable=True,
         sortable=True,
-        floatingFilter=True, # <--- ここが重要です！
+        floatingFilter=True, # ヘッダー下の検索窓
+        suppressMenuHide=True, # ★カーソルを乗せなくてもメニュー「≡」を常に表示する
         minWidth=80,
     )
-    
+
+    # 2. サイドバー（ツールパネル）の有効化
+    # これにより、表の右端に「Filters」「Columns」というタブが出現し、
+    # そこでExcelのように詳細な絞り込みが可能になります。
+    gb.configure_side_bar(filters_panel=True, columns_panel=True, defaultToolPanel="")
+
     # --- 条件付き書式 (JSコード) ---
     style_machine_wari = JsCode("""
     function(params) {
@@ -135,7 +139,7 @@ def display_excel_table(df_in, key_id):
     }
     """)
 
-    # --- 列ごとの個別設定 ---
+    # --- 列ごとの設定 ---
     if "設置" in df_show.columns:
         gb.configure_column("設置", pinned="left", width=90, cellStyle=style_status)
 
@@ -150,7 +154,6 @@ def display_excel_table(df_in, key_id):
         gb.configure_column("機械割", type=["numericColumn"], precision=1, 
                             valueFormatter="x + '%'", cellStyle=style_machine_wari)
 
-    # 平均差枚（カンマ区切り・整数）
     if "平均差枚" in df_show.columns:
         gb.configure_column("平均差枚", type=["numericColumn"], 
                             valueFormatter="x.toLocaleString()", cellStyle=style_diff)
@@ -162,13 +165,14 @@ def display_excel_table(df_in, key_id):
 
     grid_options = gb.build()
 
-    # スマホ用CSS: ヘッダー周りの微調整
-    custom_css = {
-        ".ag-header-cell-label": {"justify-content": "center"},
-        ".ag-header-cell-menu-button": {"display": "block !important", "opacity": "1 !important"}
-    }
-
-    st.markdown("👇 **項目名の下にある「白い枠」に入力すると絞り込めます**")
+    st.markdown("""
+    <small>
+    👇 **使い方**: 
+    1. 各列の「≡」ボタンを押すとフィルターメニューが出ます（常時表示設定済み）
+    2. 表の右端の「Filters」タブを開くと、詳細な絞り込みが可能です
+    </small>
+    """, unsafe_allow_html=True)
+    
     AgGrid(
         df_show,
         gridOptions=grid_options,
@@ -177,7 +181,6 @@ def display_excel_table(df_in, key_id):
         height=400,
         fit_columns_on_grid_load=False,
         theme="ag-theme-alpine", 
-        custom_css=custom_css,
         key=key_id
     )
 
@@ -231,7 +234,6 @@ def calculate_metrics(dataframe, group_cols):
         axis=1
     ).round(1)
     
-    # ★平均値を整数化
     agg["平均差枚"] = agg["平均差枚"].fillna(0).round(0).astype(int)
     agg["平均G数"] = agg["平均G数"].fillna(0).round(0).astype(int)
     
@@ -243,7 +245,6 @@ if use_zorome: title_parts.append("ゾロ目")
 title_str = " & ".join(title_parts) if title_parts else "全期間"
 
 st.markdown(f"### 🎯 分析対象: {title_str}")
-st.caption(f"抽出データ: {len(target_df)} 件")
 
 # === タブ構成 ===
 tab1, tab2, tab3, tab4 = st.tabs([
@@ -263,10 +264,10 @@ with tab1:
         st.subheader("🅰️ 通常の「台末尾 (0-9)」")
         if "台番号" in target_df.columns:
             matsubi_metrics = calculate_metrics(target_df, ["台末尾"])
-            fig = px.bar(matsubi_metrics, x="台末尾", y="平均差枚", 
+            # ここはシンプルに棒グラフのみ（集計表は見づらくなるため下の表で見てもらう）
+            st.plotly_chart(px.bar(matsubi_metrics, x="台末尾", y="平均差枚", 
                          color="機械割", color_continuous_scale="RdYlGn",
-                         text="機械割", title="末尾 (0-9) の平均差枚")
-            st.plotly_chart(fig, use_container_width=True)
+                         text="機械割", title="末尾 (0-9) の平均差枚"), use_container_width=True)
             
             display_excel_table(
                 matsubi_metrics[["台末尾", "勝率", "平均差枚", "平均G数", "機械割", "サンプル数"]],
@@ -280,10 +281,9 @@ with tab1:
             st.info("データなし")
         else:
             zorome_metrics = calculate_metrics(zorome_df, ["台ゾロ目タイプ"])
-            fig2 = px.bar(zorome_metrics, x="台ゾロ目タイプ", y="平均差枚", 
+            st.plotly_chart(px.bar(zorome_metrics, x="台ゾロ目タイプ", y="平均差枚", 
                          color="機械割", color_continuous_scale="RdYlGn",
-                         text="機械割", title="台番ゾロ目 (11〜00) の平均差枚")
-            st.plotly_chart(fig2, use_container_width=True)
+                         text="機械割", title="台番ゾロ目 (11〜00) の平均差枚"), use_container_width=True)
             
             display_excel_table(
                 zorome_metrics[["台ゾロ目タイプ", "勝率", "平均差枚", "平均G数", "機械割", "サンプル数"]],
@@ -317,17 +317,14 @@ with tab2:
                     return "❓不明"
             
             filtered["設置"] = filtered.apply(check_status, axis=1)
-            filtered["表示名"] = filtered["設置"] + " " + filtered["台番号"].astype(str) + " (" + filtered["機種"] + ")"
             
             fig = px.scatter(filtered, x="勝率", y="平均差枚", size="サンプル数", color="機械割", 
-                             hover_name="表示名", text="台番号", color_continuous_scale="RdYlGn",
-                             symbol="設置",
-                             title="勝率 vs 平均差枚 (🟢=現役 / 💀=撤去)")
+                             hover_name="台番号", text="台番号", color_continuous_scale="RdYlGn",
+                             symbol="設置", title="勝率 vs 平均差枚 (🟢=現役 / 💀=撤去)")
             fig.add_hline(y=0, line_dash="dash"); fig.add_vline(x=50, line_dash="dash")
             st.plotly_chart(fig, use_container_width=True)
             
             disp_df = filtered[["設置", "台番号", "機種", "機械割", "勝率", "平均差枚", "平均G数", "サンプル数"]].sort_values(["設置", "機械割"], ascending=[True, False])
-            
             display_excel_table(disp_df, key_id="tab2_ranking")
 
 # ==========================================
@@ -341,10 +338,8 @@ with tab3:
     
     if not model_metrics.empty:
         model_metrics = model_metrics.sort_values("総差枚", ascending=False).head(20)
-        fig = px.bar(model_metrics, x="機械割", y="機種", orientation='h', color="総差枚", 
-                     color_continuous_scale="RdYlGn", text="機械割")
-        fig.add_vline(x=100, line_dash="dash", line_color="red")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(px.bar(model_metrics, x="機械割", y="機種", orientation='h', color="総差枚", 
+                     color_continuous_scale="RdYlGn", text="機械割"), use_container_width=True)
         
         display_excel_table(
             model_metrics[["機種", "機械割", "勝率", "平均差枚", "平均G数", "サンプル数"]],
@@ -362,18 +357,15 @@ with tab4:
 
     if sel_models:
         c1, c2 = st.columns(2)
-        
         with c1:
             st.markdown("##### 🅰️ 機種 × 通常末尾 (0-9)")
             cross_norm = target_df.groupby(["機種", "台末尾"]).agg(総差枚=("総差枚", "sum"), 総G=("G数", "sum")).reset_index()
             cross_norm["機械割"] = cross_norm.apply(lambda x: ((x["総G"]*3 + x["総差枚"])/(x["総G"]*3)*100) if x["総G"]>0 else 0, axis=1).round(1)
             filt_norm = cross_norm[cross_norm["機種"].isin(sel_models)]
-            
             if not filt_norm.empty:
                 hm_norm = filt_norm.pivot(index="機種", columns="台末尾", values="機械割").fillna(0)
-                fig_norm = px.imshow(hm_norm, labels=dict(x="末尾", y="機種", color="機械割"), 
-                                     zmin=90, zmax=110, aspect="auto", text_auto=True, color_continuous_scale="RdYlGn")
-                st.plotly_chart(fig_norm, use_container_width=True)
+                st.plotly_chart(px.imshow(hm_norm, labels=dict(x="末尾", y="機種", color="機械割"), 
+                                     zmin=90, zmax=110, aspect="auto", text_auto=True, color_continuous_scale="RdYlGn"), use_container_width=True)
             else:
                 st.info("データなし")
 
@@ -383,11 +375,9 @@ with tab4:
             cross_zorome = zorome_df_only.groupby(["機種", "台ゾロ目タイプ"]).agg(総差枚=("総差枚", "sum"), 総G=("G数", "sum")).reset_index()
             cross_zorome["機械割"] = cross_zorome.apply(lambda x: ((x["総G"]*3 + x["総差枚"])/(x["総G"]*3)*100) if x["総G"]>0 else 0, axis=1).round(1)
             filt_zorome = cross_zorome[cross_zorome["機種"].isin(sel_models)]
-
             if not filt_zorome.empty:
                 hm_zorome = filt_zorome.pivot(index="機種", columns="台ゾロ目タイプ", values="機械割").fillna(0)
-                fig_zorome = px.imshow(hm_zorome, labels=dict(x="ゾロ目", y="機種", color="機械割"), 
-                                       zmin=90, zmax=110, aspect="auto", text_auto=True, color_continuous_scale="RdYlGn")
-                st.plotly_chart(fig_zorome, use_container_width=True)
+                st.plotly_chart(px.imshow(hm_zorome, labels=dict(x="ゾロ目", y="機種", color="機械割"), 
+                                       zmin=90, zmax=110, aspect="auto", text_auto=True, color_continuous_scale="RdYlGn"), use_container_width=True)
             else:
                 st.info("ゾロ目データなし")

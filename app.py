@@ -6,8 +6,8 @@ import plotly.express as px
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1wIdronWDW8xK0jDepQfWbFPBbnIVrkTls2hBDqcduVI/export?format=csv"
 
 # --- ページ設定 ---
-st.set_page_config(page_title="特定日攻略(修正版)", layout="wide")
-st.title("🎰 特定日攻略・狙い台分析ツール (設置状況・表示修正版)")
+st.set_page_config(page_title="特定日攻略(機種×ゾロ目対応)", layout="wide")
+st.title("🎰 特定日攻略・狙い台分析ツール (機種×ゾロ目対応版)")
 
 # --- 1. データ読み込み ---
 @st.cache_data(ttl=600)
@@ -72,7 +72,7 @@ def load_data():
         def get_machine_zorome(num):
             s = str(num)
             if len(s) >= 2 and s[-1] == s[-2]:
-                return s[-2:]
+                return s[-2:] # "11", "22" などを返す
             return "通常" 
         df["台ゾロ目タイプ"] = df["台番号"].apply(get_machine_zorome)
     else:
@@ -84,21 +84,19 @@ def load_data():
 df = load_data()
 
 if df is None:
-    st.error(f"データを読み込めませんでした。")
+    st.error(f"データを読み込めませんでした。URL等を確認してください。")
     st.stop()
 
-# --- ★重要: 最新機種マスターの作成 ---
-# 全データを使って、各台番号の最新日付の機種を特定する
+# --- 最新機種マスター作成 ---
 latest_machine_map = {}
 if "台番号" in df.columns and "機種" in df.columns:
-    # 念のため台番号をint型に統一して処理
-    temp_df = df.copy()
-    temp_df["台番号"] = temp_df["台番号"].astype(int)
-    
-    # 台番号ごとに最新の日付を持つ行を取得
-    latest_indices = temp_df.groupby("台番号")["日付"].idxmax()
-    latest_machine_map = temp_df.loc[latest_indices].set_index("台番号")["機種"].to_dict()
-
+    try:
+        temp_df = df.copy()
+        temp_df["台番号"] = temp_df["台番号"].astype(int)
+        latest_indices = temp_df.groupby("台番号")["日付"].idxmax()
+        latest_machine_map = temp_df.loc[latest_indices].set_index("台番号")["機種"].to_dict()
+    except:
+        pass
 
 # --- サイドバー ---
 st.sidebar.header("🎯 戦略設定")
@@ -124,7 +122,7 @@ if target_ends: mask = mask | df["末尾"].isin(target_ends)
 if use_zorome: mask = mask | df["is_Zorome"]
 
 if not target_ends and not use_zorome:
-    st.sidebar.warning("末尾またはゾロ目を選択してください。全データを表示中。")
+    st.sidebar.warning("末尾またはゾロ目を選択してください。現在は全データを表示中。")
     target_df = df.copy()
 else:
     target_df = df[mask].copy()
@@ -165,7 +163,7 @@ tab1, tab2, tab3, tab4 = st.tabs([
     "① 末尾・台番ゾロ目", 
     "② 鉄板台ランキング", 
     "③ 機種別", 
-    "④ 機種×末尾"
+    "④ 機種×末尾・ゾロ目"
 ])
 
 # ==========================================
@@ -199,7 +197,7 @@ with tab1:
             st.dataframe(zorome_metrics[["台ゾロ目タイプ", "勝率", "平均差枚", "機械割", "サンプル数"]].style.format({"勝率": "{:.1f}%", "平均差枚": "{:+,.0f}", "機械割": "{:.1f}%"}).background_gradient(subset=["機械割"], cmap="RdYlGn"), use_container_width=True)
 
 # ==========================================
-# 2. 鉄板台ランキング (★修正箇所)
+# 2. 鉄板台ランキング
 # ==========================================
 with tab2:
     st.subheader(f"② {title_str} の鉄板台ランキング")
@@ -213,14 +211,10 @@ with tab2:
         if filtered.empty:
             st.warning("データなし")
         else:
-            # 判別ロジック
             def check_status(row):
-                # 台番号をintにして辞書から引く
                 try:
                     t_no = int(row["台番号"])
                     current = latest_machine_map.get(t_no)
-                    
-                    # 機種名の空白除去などで曖昧一致させる
                     if current and str(current).strip() == str(row["機種"]).strip():
                         return "🟢現役"
                     else:
@@ -229,11 +223,8 @@ with tab2:
                     return "❓不明"
             
             filtered["設置"] = filtered.apply(check_status, axis=1)
-            
-            # グラフ用ラベル
             filtered["表示名"] = filtered["設置"] + " " + filtered["台番号"].astype(str) + " (" + filtered["機種"] + ")"
             
-            # 散布図
             fig = px.scatter(filtered, x="勝率", y="平均差枚", size="サンプル数", color="機械割", 
                              hover_name="表示名", text="台番号", color_continuous_scale="RdYlGn",
                              symbol="設置",
@@ -241,13 +232,11 @@ with tab2:
             fig.add_hline(y=0, line_dash="dash"); fig.add_vline(x=50, line_dash="dash")
             st.plotly_chart(fig, use_container_width=True)
             
-            # リスト表示 (★ここを修正しました)
             st.dataframe(
                 filtered[["設置", "台番号", "機種", "機械割", "勝率", "平均差枚", "平均G数", "サンプル数"]]
                 .sort_values(["設置", "機械割"], ascending=[True, False]) 
                 .style.format({"勝率": "{:.1f}%", "平均差枚": "{:+,.0f}", "平均G数": "{:,.0f}", "機械割": "{:.1f}%"})
                 .background_gradient(subset=["機械割", "平均差枚"], cmap="RdYlGn")
-                # 文字色をグレーにするだけに修正 (transparent=透明をやめました)
                 .applymap(lambda v: 'color: gray' if v == "💀撤去" else 'font-weight: bold', subset=["設置"]),
                 use_container_width=True
             )
@@ -270,17 +259,49 @@ with tab3:
         st.dataframe(model_metrics[["機種", "機械割", "勝率", "平均差枚", "平均G数", "サンプル数"]].style.format({"勝率": "{:.1f}%", "平均差枚": "{:+,.0f}", "平均G数": "{:,.0f}", "機械割": "{:.1f}%"}).background_gradient(subset=["機械割"], cmap="RdYlGn"), use_container_width=True)
 
 # ==========================================
-# 4. 機種 × 末尾
+# 4. 機種 × 末尾 (★ゾロ目追加)
 # ==========================================
 with tab4:
-    st.subheader("④ 機種 × 末尾 の法則")
-    cross = target_df.groupby(["機種", "台末尾"]).agg(総差枚=("総差枚", "sum"), 総G=("G数", "sum")).reset_index()
-    cross["機械割"] = cross.apply(lambda x: ((x["総G"]*3 + x["総差枚"])/(x["総G"]*3)*100) if x["総G"]>0 else 0, axis=1).round(1)
-    
-    sel_models = st.multiselect("機種選択", sorted(target_df["機種"].unique()), default=target_df["機種"].value_counts().head(10).index.tolist())
+    st.subheader("④ 機種 × 末尾・ゾロ目 の法則")
+    st.markdown("機種ごとの「末尾傾向」と「ゾロ目台番傾向」を比較分析します。")
+
+    # 機種選択
+    top_models = target_df["機種"].value_counts().head(10).index.tolist()
+    sel_models = st.multiselect("機種選択", sorted(target_df["機種"].unique()), default=top_models)
+
     if sel_models:
-        filt = cross[cross["機種"].isin(sel_models)]
-        hm = filt.pivot(index="機種", columns="台末尾", values="機械割").fillna(0)
-        fig = px.imshow(hm, labels=dict(x="末尾", y="機種", color="機械割"), zmin=90, zmax=110, aspect="auto", text_auto=True, color_continuous_scale="RdYlGn")
-        fig.update_layout(xaxis=dict(tickmode='linear', tick0=0, dtick=1))
-        st.plotly_chart(fig, use_container_width=True)
+        # A. 機種 × 通常末尾 (0-9)
+        cross_norm = target_df.groupby(["機種", "台末尾"]).agg(総差枚=("総差枚", "sum"), 総G=("G数", "sum")).reset_index()
+        cross_norm["機械割"] = cross_norm.apply(lambda x: ((x["総G"]*3 + x["総差枚"])/(x["総G"]*3)*100) if x["総G"]>0 else 0, axis=1).round(1)
+        filt_norm = cross_norm[cross_norm["機種"].isin(sel_models)]
+        
+        # B. 機種 × ゾロ目 (11-00)
+        zorome_df_only = target_df[target_df["台ゾロ目タイプ"] != "通常"]
+        cross_zorome = zorome_df_only.groupby(["機種", "台ゾロ目タイプ"]).agg(総差枚=("総差枚", "sum"), 総G=("G数", "sum")).reset_index()
+        cross_zorome["機械割"] = cross_zorome.apply(lambda x: ((x["総G"]*3 + x["総差枚"])/(x["総G"]*3)*100) if x["総G"]>0 else 0, axis=1).round(1)
+        filt_zorome = cross_zorome[cross_zorome["機種"].isin(sel_models)]
+
+        # 2カラムで表示
+        c1, c2 = st.columns([1, 1])
+        
+        with c1:
+            st.markdown("##### 🅰️ 機種 × 通常末尾 (0-9)")
+            if not filt_norm.empty:
+                hm_norm = filt_norm.pivot(index="機種", columns="台末尾", values="機械割").fillna(0)
+                fig_norm = px.imshow(hm_norm, labels=dict(x="末尾", y="機種", color="機械割"), 
+                                     zmin=90, zmax=110, aspect="auto", text_auto=True, color_continuous_scale="RdYlGn")
+                fig_norm.update_layout(xaxis=dict(tickmode='linear', tick0=0, dtick=1), height=500)
+                st.plotly_chart(fig_norm, use_container_width=True)
+            else:
+                st.info("データなし")
+
+        with c2:
+            st.markdown("##### 🅱️ 機種 × 台番ゾロ目 (11, 22...)")
+            if not filt_zorome.empty:
+                hm_zorome = filt_zorome.pivot(index="機種", columns="台ゾロ目タイプ", values="機械割").fillna(0)
+                fig_zorome = px.imshow(hm_zorome, labels=dict(x="ゾロ目", y="機種", color="機械割"), 
+                                       zmin=90, zmax=110, aspect="auto", text_auto=True, color_continuous_scale="RdYlGn")
+                fig_zorome.update_layout(height=500)
+                st.plotly_chart(fig_zorome, use_container_width=True)
+            else:
+                st.info("該当するゾロ目台番のデータがありません。")

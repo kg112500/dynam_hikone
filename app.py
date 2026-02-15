@@ -6,22 +6,19 @@ import plotly.express as px
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1wIdronWDW8xK0jDepQfWbFPBbnIVrkTls2hBDqcduVI/export?format=csv"
 
 # --- ページ設定 ---
-st.set_page_config(page_title="特定日攻略(平均G数あり)", layout="wide")
-st.title("🎰 特定日攻略・狙い台分析ツール (Spreadsheet連動版)")
+st.set_page_config(page_title="特定日攻略(現役判別)", layout="wide")
+st.title("🎰 特定日攻略・狙い台分析ツール (設置状況判別版)")
 
 # --- 1. データ読み込み ---
 @st.cache_data(ttl=600)
 def load_data():
     df = None
-    
-    # 1. 指定URLから読み込み
     if SHEET_URL:
         try:
             df = pd.read_csv(SHEET_URL)
         except Exception as e:
             pass
     
-    # 2. ダメならローカルファイル
     if df is None:
         try:
             df = pd.read_csv("dynam_hikone_complete.csv")
@@ -61,24 +58,22 @@ def load_data():
     df["日付"] = pd.to_datetime(df["日付"])
     df["日付str"] = df["日付"].dt.strftime("%Y-%m-%d")
     
-    # イベント属性 (日付)
+    # イベント属性
     df["DayNum"] = df["日付"].dt.day
     df["Month"] = df["日付"].dt.month
     df["末尾"] = df["DayNum"] % 10 
     
-    # 日付のゾロ目判定
+    # ゾロ目判定
     df["is_Zorome"] = (df["DayNum"].isin([11, 22])) | (df["Month"] == df["DayNum"])
     
-    # 台番号のゾロ目判定
+    # 台番号属性
     if "台番号" in df.columns:
         df["台末尾"] = df["台番号"] % 10
-        
         def get_machine_zorome(num):
             s = str(num)
             if len(s) >= 2 and s[-1] == s[-2]:
-                return s[-2:] # "11", "22" などを返す
+                return s[-2:]
             return "通常" 
-        
         df["台ゾロ目タイプ"] = df["台番号"].apply(get_machine_zorome)
     else:
         df["台末尾"] = 0
@@ -89,13 +84,23 @@ def load_data():
 df = load_data()
 
 if df is None:
-    st.error(f"データを読み込めませんでした。URLを確認してください。")
+    st.error(f"データを読み込めませんでした。")
     st.stop()
+
+# --- ★重要: 最新機種マスターの作成 ---
+# フィルタリング前の「全データ」を使って、各台番号の最新日付の機種を特定する
+if "台番号" in df.columns and "機種" in df.columns:
+    # 台番号ごとに最新の日付を持つ行のインデックスを取得
+    latest_indices = df.groupby("台番号")["日付"].idxmax()
+    # その行から「台番号」と「機種」を抽出して辞書にする {555: "マイジャグV", 556: "ハナハナ"...}
+    latest_machine_map = df.loc[latest_indices].set_index("台番号")["機種"].to_dict()
+else:
+    latest_machine_map = {}
+
 
 # --- サイドバー ---
 st.sidebar.header("🎯 戦略設定")
 
-# データ更新ボタン
 if st.sidebar.button("🔄 データを最新に更新"):
     st.cache_data.clear()
     st.rerun()
@@ -109,25 +114,15 @@ if len(dates) == 2:
 st.sidebar.markdown("---")
 st.sidebar.subheader("📅 分析対象の日付を選択")
 
-# 末尾選択
-target_ends = st.sidebar.multiselect(
-    "① 日付の末尾 (0-9)", 
-    options=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
-    default=[] 
-)
-
-# ゾロ目選択
+target_ends = st.sidebar.multiselect("① 日付の末尾 (0-9)", options=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9], default=[])
 use_zorome = st.sidebar.checkbox("② ゾロ目の日を含める", value=False)
 
-# データ抽出ロジック
 mask = pd.Series([False] * len(df), index=df.index)
-if target_ends:
-    mask = mask | df["末尾"].isin(target_ends)
-if use_zorome:
-    mask = mask | df["is_Zorome"]
+if target_ends: mask = mask | df["末尾"].isin(target_ends)
+if use_zorome: mask = mask | df["is_Zorome"]
 
 if not target_ends and not use_zorome:
-    st.sidebar.warning("末尾またはゾロ目を選択してください。現在は全データを表示中。")
+    st.sidebar.warning("末尾またはゾロ目を選択してください。全データを表示中。")
     target_df = df.copy()
 else:
     target_df = df[mask].copy()
@@ -176,8 +171,6 @@ tab1, tab2, tab3, tab4 = st.tabs([
 # ==========================================
 with tab1:
     col1, col2 = st.columns(2)
-    
-    # 左側：通常の末尾
     with col1:
         st.subheader("🅰️ 通常の「台末尾 (0-9)」")
         if "台番号" in target_df.columns:
@@ -189,32 +182,22 @@ with tab1:
             fig.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
             st.plotly_chart(fig, use_container_width=True)
 
-    # 右側：台番ゾロ目
     with col2:
         st.subheader("🅱️ 「台番ゾロ目 (11, 22...)」")
-        
         zorome_df = target_df[target_df["台ゾロ目タイプ"] != "通常"]
-        
         if zorome_df.empty:
-            st.info("台番ゾロ目のデータがありません。")
+            st.info("データなし")
         else:
             zorome_metrics = calculate_metrics(zorome_df, ["台ゾロ目タイプ"])
-            
             fig2 = px.bar(zorome_metrics, x="台ゾロ目タイプ", y="平均差枚", 
                          color="機械割", color_continuous_scale="RdYlGn",
                          text="機械割", title="台番ゾロ目 (11〜00) の平均差枚")
             fig2.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
             st.plotly_chart(fig2, use_container_width=True)
-            
-            st.dataframe(
-                zorome_metrics[["台ゾロ目タイプ", "勝率", "平均差枚", "機械割", "サンプル数"]]
-                .style.format({"勝率": "{:.1f}%", "平均差枚": "{:+,.0f}", "機械割": "{:.1f}%"})
-                .background_gradient(subset=["機械割"], cmap="RdYlGn"),
-                use_container_width=True
-            )
+            st.dataframe(zorome_metrics[["台ゾロ目タイプ", "勝率", "平均差枚", "機械割", "サンプル数"]].style.format({"勝率": "{:.1f}%", "平均差枚": "{:+,.0f}", "機械割": "{:.1f}%"}).background_gradient(subset=["機械割"], cmap="RdYlGn"), use_container_width=True)
 
 # ==========================================
-# 2. 鉄板台ランキング (★修正箇所)
+# 2. 鉄板台ランキング (★現役・撤去判別)
 # ==========================================
 with tab2:
     st.subheader(f"② {title_str} の鉄板台ランキング")
@@ -223,23 +206,42 @@ with tab2:
     else:
         min_sample = st.slider("最低稼働回数", 1, 10, 1, key="tab2_slider")
         daiban_metrics = calculate_metrics(target_df, ["台番号", "機種"])
-        filtered = daiban_metrics[daiban_metrics["サンプル数"] >= min_sample]
+        filtered = daiban_metrics[daiban_metrics["サンプル数"] >= min_sample].copy()
         
         if filtered.empty:
             st.warning("データなし")
         else:
-            filtered["表示名"] = filtered["台番号"].astype(str) + " (" + filtered["機種"] + ")"
+            # ★ここで判別ロジック適用
+            # 行ごとの機種が、最新マスター(latest_machine_map)と一致するか？
+            def check_status(row):
+                current = latest_machine_map.get(row["台番号"])
+                if current == row["機種"]:
+                    return "🟢現役" # Current
+                else:
+                    return "💀撤去" # Removed
+            
+            filtered["設置"] = filtered.apply(check_status, axis=1)
+            
+            # グラフ用ラベル
+            filtered["表示名"] = filtered["設置"] + " " + filtered["台番号"].astype(str) + " (" + filtered["機種"] + ")"
+            
+            # 散布図
             fig = px.scatter(filtered, x="勝率", y="平均差枚", size="サンプル数", color="機械割", 
                              hover_name="表示名", text="台番号", color_continuous_scale="RdYlGn",
-                             title="勝率 vs 平均差枚")
+                             symbol="設置", # 形を変える (丸=現役、ひし形=撤去など)
+                             title="勝率 vs 平均差枚 (🟢=現役 / 💀=撤去)")
             fig.add_hline(y=0, line_dash="dash"); fig.add_vline(x=50, line_dash="dash")
             st.plotly_chart(fig, use_container_width=True)
             
-            # ★ここに「平均G数」を追加しました
-            st.dataframe(filtered[["台番号", "機種", "機械割", "勝率", "平均差枚", "平均G数", "サンプル数"]]
-                .sort_values("機械割", ascending=False)
+            # リスト表示（設置カラムを先頭に）
+            st.dataframe(
+                filtered[["設置", "台番号", "機種", "機械割", "勝率", "平均差枚", "平均G数", "サンプル数"]]
+                .sort_values(["設置", "機械割"], ascending=[True, False]) # 現役を上に、その中で機械割順
                 .style.format({"勝率": "{:.1f}%", "平均差枚": "{:+,.0f}", "平均G数": "{:,.0f}", "機械割": "{:.1f}%"})
-                .background_gradient(subset=["機械割"], cmap="RdYlGn"), use_container_width=True)
+                .background_gradient(subset=["機械割", "平均差枚"], cmap="RdYlGn")
+                .applymap(lambda v: 'color: transparent' if v == "💀撤去" else '', subset=["設置"]), # 撤去は目立たせない工夫など
+                use_container_width=True
+            )
 
 # ==========================================
 # 3. 機種別
@@ -256,11 +258,7 @@ with tab3:
                      color_continuous_scale="RdYlGn", text="機械割")
         fig.add_vline(x=100, line_dash="dash", line_color="red")
         st.plotly_chart(fig, use_container_width=True)
-        
-        # こちらにも平均G数があれば表示
-        st.dataframe(model_metrics[["機種", "機械割", "勝率", "平均差枚", "平均G数", "サンプル数"]]
-                .style.format({"勝率": "{:.1f}%", "平均差枚": "{:+,.0f}", "平均G数": "{:,.0f}", "機械割": "{:.1f}%"})
-                .background_gradient(subset=["機械割"], cmap="RdYlGn"), use_container_width=True)
+        st.dataframe(model_metrics[["機種", "機械割", "勝率", "平均差枚", "平均G数", "サンプル数"]].style.format({"勝率": "{:.1f}%", "平均差枚": "{:+,.0f}", "平均G数": "{:,.0f}", "機械割": "{:.1f}%"}).background_gradient(subset=["機械割"], cmap="RdYlGn"), use_container_width=True)
 
 # ==========================================
 # 4. 機種 × 末尾

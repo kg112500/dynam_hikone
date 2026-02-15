@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px  # ★ここを復活させました！
+import plotly.express as px
 from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
 
 # --- ★設定: ユーザー指定のURL ---
@@ -90,29 +90,66 @@ if "台番号" in df.columns and "機種" in df.columns:
     except:
         pass
 
-# --- Excel風テーブル設定 ---
-def display_excel_table(df_in, key_id):
+# --- ★重要: フィルタリング機能付きテーブル表示関数 ---
+def display_filterable_table(df_in, key_id):
     if df_in.empty:
         st.info("データがありません")
         return
 
-    df_show = df_in.copy()
+    # === ① スマホ用フィルター操作エリア (Excelのオートフィルターの代わり) ===
+    with st.expander("🔍 **絞り込み条件を開く (ここをタップ)**", expanded=False):
+        c1, c2 = st.columns(2)
+        
+        # 1. 機種名フィルター (存在する場合)
+        df_filtered = df_in.copy()
+        if "機種" in df_filtered.columns:
+            all_machines = sorted(df_filtered["機種"].astype(str).unique())
+            with c1:
+                selected_machines = st.multiselect(
+                    "機種を選択 (複数可)", 
+                    all_machines, 
+                    key=f"filter_machine_{key_id}",
+                    placeholder="全機種表示中..."
+                )
+            if selected_machines:
+                df_filtered = df_filtered[df_filtered["機種"].isin(selected_machines)]
+
+        # 2. 差枚数フィルター (存在する場合)
+        if "平均差枚" in df_filtered.columns:
+            with c2:
+                min_diff = st.number_input(
+                    "平均差枚 (〇〇枚以上)", 
+                    value=0, step=100, 
+                    key=f"filter_diff_{key_id}"
+                )
+            df_filtered = df_filtered[df_filtered["平均差枚"] >= min_diff]
+
+        # 3. 勝率フィルター (存在する場合)
+        if "勝率" in df_filtered.columns:
+            with c2:
+                min_win = st.slider(
+                    "勝率 (〇〇%以上)", 
+                    0, 100, 0, 
+                    key=f"filter_win_{key_id}"
+                )
+            df_filtered = df_filtered[df_filtered["勝率"] >= min_win]
+
+    # === ② 結果表示エリア (AgGrid) ===
+    st.markdown(f"<small>抽出件数: {len(df_filtered)} 件</small>", unsafe_allow_html=True)
+
+    gb = GridOptionsBuilder.from_dataframe(df_filtered)
     
-    gb = GridOptionsBuilder.from_dataframe(df_show)
-    
-    # 基本設定
+    # 基本設定 (表内の文字入力フィルターも残しておく)
     gb.configure_default_column(
         resizable=True,
         filterable=True,
         sortable=True,
-        floatingFilter=True,   # 常に検索窓を表示
-        suppressMenuHide=True, # 常にメニューアイコンを表示
+        floatingFilter=True, # 表の中の検索窓も有効
+        suppressMenuHide=True, 
         minWidth=80,
     )
 
-    gb.configure_side_bar(filters_panel=True, columns_panel=True, defaultToolPanel="")
-
-    # JSコード定義
+    # JSによる色付け設定
     style_machine_wari = JsCode("""
     function(params) {
         if (params.value >= 105) { return {'color': 'white', 'backgroundColor': '#006400'}; }
@@ -120,7 +157,6 @@ def display_excel_table(df_in, key_id):
         return null;
     }
     """)
-
     style_diff = JsCode("""
     function(params) {
         if (params.value > 0) { return {'color': 'blue', 'fontWeight': 'bold'}; }
@@ -128,7 +164,6 @@ def display_excel_table(df_in, key_id):
         return null;
     }
     """)
-
     style_status = JsCode("""
     function(params) {
         if (params.value === '💀撤去') { return {'color': 'gray'}; }
@@ -136,47 +171,37 @@ def display_excel_table(df_in, key_id):
     }
     """)
 
-    # 列設定
-    if "設置" in df_show.columns:
+    # 列定義
+    if "設置" in df_filtered.columns:
         gb.configure_column("設置", pinned="left", width=90, cellStyle=style_status)
-
-    if "機種" in df_show.columns:
+    if "機種" in df_filtered.columns:
         gb.configure_column("機種", minWidth=150)
-
-    if "勝率" in df_show.columns:
-        gb.configure_column("勝率", type=["numericColumn"], precision=1, 
-                            valueFormatter="x + '%'")
-
-    if "機械割" in df_show.columns:
-        gb.configure_column("機械割", type=["numericColumn"], precision=1, 
-                            valueFormatter="x + '%'", cellStyle=style_machine_wari)
-
-    if "平均差枚" in df_show.columns:
-        gb.configure_column("平均差枚", type=["numericColumn"], 
-                            valueFormatter="x.toLocaleString()", cellStyle=style_diff)
-
+    if "勝率" in df_filtered.columns:
+        gb.configure_column("勝率", type=["numericColumn"], precision=1, valueFormatter="x + '%'")
+    if "機械割" in df_filtered.columns:
+        gb.configure_column("機械割", type=["numericColumn"], precision=1, valueFormatter="x + '%'", cellStyle=style_machine_wari)
+    if "平均差枚" in df_filtered.columns:
+        gb.configure_column("平均差枚", type=["numericColumn"], valueFormatter="x.toLocaleString()", cellStyle=style_diff)
     for col in ["総差枚", "平均G数", "総G数", "サンプル数", "台番号"]:
-        if col in df_show.columns:
-            gb.configure_column(col, type=["numericColumn"], 
-                                valueFormatter="x.toLocaleString()")
+        if col in df_filtered.columns:
+            gb.configure_column(col, type=["numericColumn"], valueFormatter="x.toLocaleString()")
 
     grid_options = gb.build()
     
     AgGrid(
-        df_show,
+        df_filtered,
         gridOptions=grid_options,
         allow_unsafe_jscode=True,
         enable_enterprise_modules=False,
         height=400,
         fit_columns_on_grid_load=False,
         theme="ag-theme-alpine", 
-        key=key_id
+        key=f"grid_{key_id}"
     )
 
 
 # --- サイドバー ---
 st.sidebar.header("🎯 戦略設定")
-
 if st.sidebar.button("🔄 データを最新に更新"):
     st.cache_data.clear()
     st.rerun()
@@ -248,7 +273,6 @@ tab1, tab2, tab3, tab4 = st.tabs([
 # ==========================================
 with tab1:
     col1, col2 = st.columns(2)
-    
     with col1:
         st.subheader("🅰️ 通常の「台末尾 (0-9)」")
         if "台番号" in target_df.columns:
@@ -256,8 +280,7 @@ with tab1:
             st.plotly_chart(px.bar(matsubi_metrics, x="台末尾", y="平均差枚", 
                          color="機械割", color_continuous_scale="RdYlGn",
                          text="機械割", title="末尾 (0-9) の平均差枚"), use_container_width=True)
-            
-            display_excel_table(
+            display_filterable_table(
                 matsubi_metrics[["台末尾", "勝率", "平均差枚", "平均G数", "機械割", "サンプル数"]],
                 key_id="tab1_norm"
             )
@@ -272,8 +295,7 @@ with tab1:
             st.plotly_chart(px.bar(zorome_metrics, x="台ゾロ目タイプ", y="平均差枚", 
                          color="機械割", color_continuous_scale="RdYlGn",
                          text="機械割", title="台番ゾロ目 (11〜00) の平均差枚"), use_container_width=True)
-            
-            display_excel_table(
+            display_filterable_table(
                 zorome_metrics[["台ゾロ目タイプ", "勝率", "平均差枚", "平均G数", "機械割", "サンプル数"]],
                 key_id="tab1_zorome"
             )
@@ -313,7 +335,9 @@ with tab2:
             st.plotly_chart(fig, use_container_width=True)
             
             disp_df = filtered[["設置", "台番号", "機種", "機械割", "勝率", "平均差枚", "平均G数", "サンプル数"]].sort_values(["設置", "機械割"], ascending=[True, False])
-            display_excel_table(disp_df, key_id="tab2_ranking")
+            
+            # ★ここが変わりました：フィルター操作エリア付きテーブル
+            display_filterable_table(disp_df, key_id="tab2_ranking")
 
 # ==========================================
 # 3. 機種別
@@ -329,7 +353,7 @@ with tab3:
         st.plotly_chart(px.bar(model_metrics, x="機械割", y="機種", orientation='h', color="総差枚", 
                      color_continuous_scale="RdYlGn", text="機械割"), use_container_width=True)
         
-        display_excel_table(
+        display_filterable_table(
             model_metrics[["機種", "機械割", "勝率", "平均差枚", "平均G数", "サンプル数"]],
             key_id="tab3_model"
         )

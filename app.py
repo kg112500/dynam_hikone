@@ -6,7 +6,7 @@ import plotly.express as px
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1wIdronWDW8xK0jDepQfWbFPBbnIVrkTls2hBDqcduVI/export?format=csv"
 
 # --- ページ設定 ---
-st.set_page_config(page_title="特定日攻略(URL設定済)", layout="wide")
+st.set_page_config(page_title="特定日攻略(平均G数あり)", layout="wide")
 st.title("🎰 特定日攻略・狙い台分析ツール (Spreadsheet連動版)")
 
 # --- 1. データ読み込み ---
@@ -19,11 +19,9 @@ def load_data():
         try:
             df = pd.read_csv(SHEET_URL)
         except Exception as e:
-            # 読み込み失敗時はログに出すだけにしておく
-            print(f"Spreadsheet load error: {e}")
             pass
     
-    # 2. ダメならローカルファイル (バックアップ)
+    # 2. ダメならローカルファイル
     if df is None:
         try:
             df = pd.read_csv("dynam_hikone_complete.csv")
@@ -71,7 +69,7 @@ def load_data():
     # 日付のゾロ目判定
     df["is_Zorome"] = (df["DayNum"].isin([11, 22])) | (df["Month"] == df["DayNum"])
     
-    # 台番号のゾロ目判定 (11, 22, 33... 00)
+    # 台番号のゾロ目判定
     if "台番号" in df.columns:
         df["台末尾"] = df["台番号"] % 10
         
@@ -91,7 +89,7 @@ def load_data():
 df = load_data()
 
 if df is None:
-    st.error(f"データを読み込めませんでした。URLが正しいか、または 'dynam_hikone_complete.csv' があるか確認してください。\n設定URL: {SHEET_URL}")
+    st.error(f"データを読み込めませんでした。URLを確認してください。")
     st.stop()
 
 # --- サイドバー ---
@@ -179,7 +177,7 @@ tab1, tab2, tab3, tab4 = st.tabs([
 with tab1:
     col1, col2 = st.columns(2)
     
-    # 左側：通常の末尾(0-9)
+    # 左側：通常の末尾
     with col1:
         st.subheader("🅰️ 通常の「台末尾 (0-9)」")
         if "台番号" in target_df.columns:
@@ -191,10 +189,9 @@ with tab1:
             fig.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
             st.plotly_chart(fig, use_container_width=True)
 
-    # 右側：台番ゾロ目(11, 22...)
+    # 右側：台番ゾロ目
     with col2:
         st.subheader("🅱️ 「台番ゾロ目 (11, 22...)」")
-        st.markdown("末尾2桁がゾロ目（511, 522, 555等）のデータのみ抽出")
         
         zorome_df = target_df[target_df["台ゾロ目タイプ"] != "通常"]
         
@@ -217,7 +214,7 @@ with tab1:
             )
 
 # ==========================================
-# 2. 鉄板台ランキング
+# 2. 鉄板台ランキング (★修正箇所)
 # ==========================================
 with tab2:
     st.subheader(f"② {title_str} の鉄板台ランキング")
@@ -237,9 +234,11 @@ with tab2:
                              title="勝率 vs 平均差枚")
             fig.add_hline(y=0, line_dash="dash"); fig.add_vline(x=50, line_dash="dash")
             st.plotly_chart(fig, use_container_width=True)
-            st.dataframe(filtered[["台番号", "機種", "機械割", "勝率", "平均差枚", "サンプル数"]]
+            
+            # ★ここに「平均G数」を追加しました
+            st.dataframe(filtered[["台番号", "機種", "機械割", "勝率", "平均差枚", "平均G数", "サンプル数"]]
                 .sort_values("機械割", ascending=False)
-                .style.format({"勝率": "{:.1f}%", "平均差枚": "{:+,.0f}", "機械割": "{:.1f}%"})
+                .style.format({"勝率": "{:.1f}%", "平均差枚": "{:+,.0f}", "平均G数": "{:,.0f}", "機械割": "{:.1f}%"})
                 .background_gradient(subset=["機械割"], cmap="RdYlGn"), use_container_width=True)
 
 # ==========================================
@@ -257,6 +256,11 @@ with tab3:
                      color_continuous_scale="RdYlGn", text="機械割")
         fig.add_vline(x=100, line_dash="dash", line_color="red")
         st.plotly_chart(fig, use_container_width=True)
+        
+        # こちらにも平均G数があれば表示
+        st.dataframe(model_metrics[["機種", "機械割", "勝率", "平均差枚", "平均G数", "サンプル数"]]
+                .style.format({"勝率": "{:.1f}%", "平均差枚": "{:+,.0f}", "平均G数": "{:,.0f}", "機械割": "{:.1f}%"})
+                .background_gradient(subset=["機械割"], cmap="RdYlGn"), use_container_width=True)
 
 # ==========================================
 # 4. 機種 × 末尾

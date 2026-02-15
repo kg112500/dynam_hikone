@@ -109,7 +109,7 @@ def display_excel_table(df_in, key_id):
         minWidth=80,
     )
     
-    # ★変更点: フローティングフィルターを有効化（ヘッダーの下に検索窓が出る）
+    # ★重要: フローティングフィルター（ヘッダー下の検索窓）をON
     gb.configure_grid_options(enableFloatingFilter=True)
 
     # --- 条件付き書式 (JSコード) ---
@@ -151,12 +151,10 @@ def display_excel_table(df_in, key_id):
         gb.configure_column("機械割", type=["numericColumn"], precision=1, 
                             valueFormatter="x + '%'", cellStyle=style_machine_wari)
 
-    # 平均差枚（カンマ区切り・整数）
     if "平均差枚" in df_show.columns:
         gb.configure_column("平均差枚", type=["numericColumn"], 
                             valueFormatter="x.toLocaleString()", cellStyle=style_diff)
 
-    # その他の数値カラム
     for col in ["総差枚", "平均G数", "総G数", "サンプル数", "台番号"]:
         if col in df_show.columns:
             gb.configure_column(col, type=["numericColumn"], 
@@ -164,7 +162,15 @@ def display_excel_table(df_in, key_id):
 
     grid_options = gb.build()
 
-    st.markdown("👇 **各列の検索ボックスで絞り込みができます**")
+    # ★スマホ用CSS調整: メニューアイコン(≡)を常に強制表示させる
+    custom_css = {
+        ".ag-header-cell-menu-button": {
+            "display": "block !important",
+            "opacity": "1 !important"
+        }
+    }
+
+    st.markdown("👇 **「≡」でメニュー、「下の枠」で直接検索できます**")
     AgGrid(
         df_show,
         gridOptions=grid_options,
@@ -172,6 +178,8 @@ def display_excel_table(df_in, key_id):
         enable_enterprise_modules=False,
         height=400,
         fit_columns_on_grid_load=False,
+        theme="ag-theme-alpine", # ★Excelっぽいテーマを明示的に指定
+        custom_css=custom_css,   # ★CSSを注入
         key=key_id
     )
 
@@ -225,7 +233,7 @@ def calculate_metrics(dataframe, group_cols):
         axis=1
     ).round(1)
     
-    # ★変更点: 平均値を整数型に変換 (四捨五入してint化)
+    # ★平均値を整数化 (小数点なし)
     agg["平均差枚"] = agg["平均差枚"].fillna(0).round(0).astype(int)
     agg["平均G数"] = agg["平均G数"].fillna(0).round(0).astype(int)
     

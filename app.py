@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
+import numpy as np
 from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
 
 # --- ★設定: ユーザー指定のURL ---
@@ -11,14 +11,13 @@ SHEET_URL = "https://docs.google.com/spreadsheets/d/1wIdronWDW8xK0jDepQfWbFPBbnI
 MAPPING_URL = "https://docs.google.com/spreadsheets/d/1wIdronWDW8xK0jDepQfWbFPBbnIVrkTls2hBDqcduVI/export?format=csv&gid=1849745164"
 
 # 3. 店舗図面(座標)データのURL
-# 前回作成した「座標」シートのURLをここに貼ってください
+# ★ここに、前回作成してもらった「座標」シートのURLを貼ってください
 MAP_COORD_URL = "https://docs.google.com/spreadsheets/d/1wIdronWDW8xK0jDepQfWbFPBbnIVrkTls2hBDqcduVI/export?format=csv&gid=1743237199" 
-# ※もしURLがまだ決まっていなければ、前回のURL貼り付け作業を行ってください
 
 # --- ページ設定 ---
 st.set_page_config(page_title="ダイナム彦根分析ツール", layout="wide")
 
-# CSS設定 (サイドバー維持・不要要素削除)
+# CSS設定 (印刷プレビューのような見た目にする)
 hide_st_style = """
     <style>
     [data-testid="stDecoration"] {display: none;}
@@ -28,28 +27,80 @@ hide_st_style = """
     a[href*="streamlit.app"] {display: none !important;}
     [data-testid="collapsedControl"] {visibility: visible !important; display: block !important; z-index: 999999 !important;}
     header[data-testid="stHeader"] {visibility: visible !important; background-color: rgba(255, 255, 255, 1) !important;}
-    .block-container {padding-top: 3rem !important;}
+    .block-container {padding-top: 2rem !important; padding-left: 1rem !important; padding-right: 1rem !important;}
+    
+    /* マップ用のスタイル */
+    .map-container {
+        display: grid;
+        /* 列数と幅はPython側で動的に生成しますが、基本のギャップを設定 */
+        gap: 2px; 
+        background-color: #f0f2f6;
+        padding: 10px;
+        overflow-x: auto; /* 横スクロール対応 */
+        width: 100%;
+    }
+    
+    .map-cell {
+        position: relative;
+        border: 1px solid #ccc;
+        height: 40px; /* セルの高さ */
+        font-size: 10px;
+        display: flex;
+        align-items: center;
+        padding: 0 4px;
+        line-height: 1.1;
+        overflow: hidden;
+    }
+
+    /* 左側の列（Xが奇数）: 右寄せ（島の内側に文字） */
+    .cell-odd {
+        justify-content: flex-end;
+        text-align: right;
+        flex-direction: row;
+    }
+    
+    /* 右側の列（Xが偶数）: 左寄せ（島の内側に文字） */
+    .cell-even {
+        justify-content: flex-start;
+        text-align: left;
+        flex-direction: row-reverse; /* 番号を端に、名前を内側に */
+    }
+
+    .machine-no {
+        font-weight: bold;
+        font-size: 12px;
+        margin: 0 4px;
+    }
+    
+    .machine-name {
+        font-size: 9px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        color: #333;
+    }
+
+    .map-aisle {
+        /* 通路は透明 */
+        border: none;
+        background: transparent;
+    }
     </style>
 """
 st.markdown(hide_st_style, unsafe_allow_html=True)
 
 st.title("🎰 ダイナム彦根分析ツール (Pro版)")
 
-# --- 1. データ読み込み ---
+# --- データ読み込み関数 ---
 @st.cache_data(ttl=600)
 def load_data():
     df = None
     if SHEET_URL:
-        try:
-            df = pd.read_csv(SHEET_URL)
-        except Exception as e:
-            pass
-    
+        try: df = pd.read_csv(SHEET_URL)
+        except: pass
     if df is None:
-        try:
-            df = pd.read_csv("dynam_hikone_complete.csv")
-        except FileNotFoundError:
-            return None
+        try: df = pd.read_csv("dynam_hikone_complete.csv")
+        except: return None
 
     df.columns = df.columns.str.strip()
     rename_map = {
@@ -62,9 +113,7 @@ def load_data():
         if std not in df.columns:
             for alias in aliases:
                 found = next((c for c in df.columns if alias in c), None)
-                if found:
-                    df.rename(columns={found: std}, inplace=True)
-                    break
+                if found: df.rename(columns={found: std}, inplace=True); break
 
     if MAPPING_URL and "機種" in df.columns:
         try:
@@ -72,8 +121,7 @@ def load_data():
             if map_df.shape[1] >= 2:
                 rename_dict = dict(zip(map_df.iloc[:, 0], map_df.iloc[:, 1]))
                 df["機種"] = df["機種"].replace(rename_dict)
-        except Exception as e:
-            pass
+        except: pass
 
     numeric_cols = ["台番号", "総差枚", "G数"]
     for col in df.columns:
@@ -81,11 +129,9 @@ def load_data():
             try:
                 df[col] = df[col].astype(str).str.replace(",", "").str.replace("+", "").str.replace(" ", "")
                 df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
-            except:
-                pass
+            except: pass
 
-    if "日付" not in df.columns or "総差枚" not in df.columns:
-        return None
+    if "日付" not in df.columns or "総差枚" not in df.columns: return None
 
     df["日付"] = pd.to_datetime(df["日付"])
     df["DayNum"] = df["日付"].dt.day
@@ -97,153 +143,34 @@ def load_data():
         df["台末尾"] = df["台番号"] % 10
         def get_machine_zorome(num):
             s = str(num)
-            if len(s) >= 2 and s[-1] == s[-2]:
-                return s[-2:]
+            if len(s) >= 2 and s[-1] == s[-2]: return s[-2:]
             return "通常" 
         df["台ゾロ目タイプ"] = df["台番号"].apply(get_machine_zorome)
     else:
         df["台末尾"] = 0
         df["台ゾロ目タイプ"] = "通常"
-
     return df
 
-# --- 2. 座標データの読み込み関数 ---
 @st.cache_data(ttl=3600)
 def load_map_coordinates():
-    if not MAP_COORD_URL:
-        return None
+    if not MAP_COORD_URL: return None
     try:
         coord_df = pd.read_csv(MAP_COORD_URL)
         coord_df.columns = coord_df.columns.str.strip()
-        
         no_col = next((c for c in coord_df.columns if "台" in c or "No" in c), None)
         x_col = next((c for c in coord_df.columns if "X" in c.upper()), None)
         y_col = next((c for c in coord_df.columns if "Y" in c.upper()), None)
-        
         if no_col and x_col and y_col:
             coord_df = coord_df[[no_col, x_col, y_col]].rename(columns={no_col: "台番号", x_col: "Map_X", y_col: "Map_Y"})
             coord_df["台番号"] = pd.to_numeric(coord_df["台番号"], errors='coerce')
             return coord_df.dropna()
-    except:
-        pass
+    except: pass
     return None
 
 df = load_data()
 map_coords = load_map_coordinates()
 
-if df is None:
-    st.error(f"データを読み込めませんでした。")
-    st.stop()
-
-# --- 最新機種マスター作成 ---
-latest_machine_map = {}
-if "台番号" in df.columns and "機種" in df.columns:
-    try:
-        temp_df = df.copy()
-        temp_df["台番号"] = temp_df["台番号"].astype(int)
-        latest_indices = temp_df.groupby("台番号")["日付"].idxmax()
-        latest_machine_map = temp_df.loc[latest_indices].set_index("台番号")["機種"].to_dict()
-    except:
-        pass
-
-# --- テーブル表示関数 ---
-def display_filterable_table(df_in, key_id):
-    if df_in.empty:
-        st.info("データがありません")
-        return
-
-    with st.expander("🔍 **絞り込み条件を開く**", expanded=False):
-        c1, c2 = st.columns(2)
-        df_filtered = df_in.copy()
-        if "機種" in df_filtered.columns:
-            all_machines = sorted(df_filtered["機種"].astype(str).unique())
-            with c1:
-                selected_machines = st.multiselect("機種", all_machines, key=f"filter_machine_{key_id}", placeholder="全機種")
-            if selected_machines:
-                df_filtered = df_filtered[df_filtered["機種"].isin(selected_machines)]
-
-        if "平均差枚" in df_filtered.columns:
-            with c2:
-                min_diff = st.number_input("平均差枚以上", value=0, step=100, key=f"filter_diff_{key_id}")
-            df_filtered = df_filtered[df_filtered["平均差枚"] >= min_diff]
-
-        if "勝率" in df_filtered.columns:
-            with c2:
-                min_win = st.slider("勝率以上(%)", 0, 100, 0, key=f"filter_win_{key_id}")
-            df_filtered = df_filtered[df_filtered["勝率"] >= min_win]
-
-    st.markdown(f"<small>抽出件数: {len(df_filtered)} 件</small>", unsafe_allow_html=True)
-    gb = GridOptionsBuilder.from_dataframe(df_filtered)
-    gb.configure_default_column(resizable=True, filterable=True, sortable=True, floatingFilter=False, suppressMenuHide=True, minWidth=40)
-
-    style_machine_wari = JsCode("""function(p){if(p.value>=105){return{'color':'white','backgroundColor':'#006400'};}if(p.value>=100){return{'backgroundColor':'#90EE90'};}return null;}""")
-    style_diff = JsCode("""function(p){if(p.value>0){return{'color':'blue','fontWeight':'bold'};}if(p.value<0){return{'color':'red'};}return null;}""")
-    style_status = JsCode("""function(p){if(p.value==='💀撤去'){return{'color':'gray'};}return{'fontWeight':'bold'};}""")
-
-    if "設置" in df_filtered.columns:
-        gb.configure_column("設置", width=50, cellStyle=style_status) 
-    if "台番号" in df_filtered.columns:
-        gb.configure_column("台番号", width=50, type=["numericColumn"], valueFormatter="x.toLocaleString()")
-    if "機種" in df_filtered.columns:
-        gb.configure_column("機種", minWidth=100, flex=1)
-
-    numeric_configs = {
-        "勝率": {"width": 60, "format": "x + '%'"},
-        "機械割": {"width": 60, "format": "x + '%'", "style": style_machine_wari},
-        "平均差枚": {"width": 70, "format": "x.toLocaleString()", "style": style_diff},
-        "総差枚": {"width": 70, "format": "x.toLocaleString()"},
-        "平均G数": {"width": 60, "format": "x.toLocaleString()"},
-        "総G数": {"width": 60, "format": "x.toLocaleString()"},
-        "サンプル数": {"width": 50, "format": "x.toLocaleString()"},
-        "台末尾": {"width": 50, "format": ""},
-        "台ゾロ目タイプ": {"width": 60, "format": ""}
-    }
-
-    for col, conf in numeric_configs.items():
-        if col in df_filtered.columns:
-            c_style = conf.get("style", None)
-            gb.configure_column(col, width=conf["width"], type=["numericColumn"], precision=1 if "%" in conf["format"] else 0, valueFormatter=conf["format"], cellStyle=c_style)
-
-    grid_options = gb.build()
-    AgGrid(df_filtered, gridOptions=grid_options, allow_unsafe_jscode=True, enable_enterprise_modules=False, height=400, fit_columns_on_grid_load=True, theme="ag-theme-alpine", key=f"grid_{key_id}")
-
-
-# --- サイドバー ---
-st.sidebar.header("🎯 戦略設定")
-if st.sidebar.checkbox("📋 元の機種名一覧を表示(コピペ用)"):
-    st.sidebar.info("変換リスト作成用に、現在の機種名をコピーできます。")
-    if "機種" in df.columns:
-        raw_machines = sorted(df["機種"].unique())
-        st.sidebar.text_area("全機種名リスト", "\n".join(map(str, raw_machines)), height=200)
-
-if st.sidebar.button("🔄 データを最新に更新"):
-    st.cache_data.clear()
-    st.rerun()
-
-min_d, max_d = df["日付"].min(), df["日付"].max()
-dates = st.sidebar.date_input("分析期間", [min_d, max_d])
-if len(dates) == 2:
-    df = df[(df["日付"].dt.date >= dates[0]) & (df["日付"].dt.date <= dates[1])]
-
-st.sidebar.markdown("---")
-st.sidebar.subheader("📅 分析対象の日付を選択")
-
-target_ends = st.sidebar.multiselect("① 日付の末尾 (0-9)", options=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9], default=[])
-use_zorome = st.sidebar.checkbox("② ゾロ目の日を含める", value=False)
-
-mask = pd.Series([False] * len(df), index=df.index)
-if target_ends: mask = mask | df["末尾"].isin(target_ends)
-if use_zorome: mask = mask | df["is_Zorome"]
-
-if not target_ends and not use_zorome:
-    st.sidebar.warning("末尾またはゾロ目を選択してください。現在は全データを表示中。")
-    target_df = df.copy()
-else:
-    target_df = df[mask].copy()
-
-if target_df.empty:
-    st.warning("条件に該当するデータがありません。")
-    st.stop()
+if df is None: st.error("データを読み込めませんでした。"); st.stop()
 
 # --- 共通計算ロジック ---
 def calculate_metrics(dataframe, group_cols):
@@ -252,253 +179,144 @@ def calculate_metrics(dataframe, group_cols):
         勝数=("総差枚", lambda x: (x > 0).sum()),
         総差枚=("総差枚", "sum"),
         総G数=("G数", "sum"),
-        平均差枚=("総差枚", "mean"),
-        平均G数=("G数", "mean")
+        平均差枚=("総差枚", "mean")
     ).reset_index()
     agg["勝率"] = (agg["勝数"] / agg["サンプル数"] * 100).round(1)
     agg["機械割"] = agg.apply(lambda x: ((x["総G数"]*3 + x["総差枚"]) / (x["総G数"]*3) * 100) if x["総G数"] > 0 else 0, axis=1).round(1)
     agg["平均差枚"] = agg["平均差枚"].fillna(0).round(0).astype(int)
-    agg["平均G数"] = agg["平均G数"].fillna(0).round(0).astype(int)
     return agg
 
-title_parts = []
-if target_ends: title_parts.append(f"末尾{target_ends}")
-if use_zorome: title_parts.append("ゾロ目")
-title_str = " & ".join(title_parts) if title_parts else "全期間"
+# --- サイドバー・フィルター ---
+st.sidebar.header("🎯 戦略設定")
+if st.sidebar.button("🔄 データを最新に更新"): st.cache_data.clear(); st.rerun()
 
+min_d, max_d = df["日付"].min(), df["日付"].max()
+dates = st.sidebar.date_input("分析期間", [min_d, max_d])
+if len(dates) == 2: df = df[(df["日付"].dt.date >= dates[0]) & (df["日付"].dt.date <= dates[1])]
+
+st.sidebar.markdown("---")
+target_ends = st.sidebar.multiselect("日付の末尾 (0-9)", options=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9], default=[])
+use_zorome = st.sidebar.checkbox("ゾロ目の日を含める", value=False)
+
+mask = pd.Series([False] * len(df), index=df.index)
+if target_ends: mask = mask | df["末尾"].isin(target_ends)
+if use_zorome: mask = mask | df["is_Zorome"]
+target_df = df[mask].copy() if (target_ends or use_zorome) else df.copy()
+
+if target_df.empty: st.warning("データなし"); st.stop()
+
+# タイトル作成
+title_str = " & ".join(([f"末尾{target_ends}"] if target_ends else []) + (["ゾロ目"] if use_zorome else [])) or "全期間"
 st.markdown(f"### 🎯 分析対象: {title_str}")
 
+# --- テーブル表示関数 ---
+def display_filterable_table(df_in, key_id):
+    gb = GridOptionsBuilder.from_dataframe(df_in)
+    gb.configure_default_column(resizable=True, filterable=True, sortable=True, minWidth=40)
+    style_machine_wari = JsCode("""function(p){if(p.value>=105){return{'color':'white','backgroundColor':'#006400'};}if(p.value>=100){return{'backgroundColor':'#90EE90'};}return null;}""")
+    style_diff = JsCode("""function(p){if(p.value>0){return{'color':'blue','fontWeight':'bold'};}if(p.value<0){return{'color':'red'};}return null;}""")
+    gb.configure_column("機械割", cellStyle=style_machine_wari)
+    gb.configure_column("平均差枚", cellStyle=style_diff)
+    AgGrid(df_in, gridOptions=gb.build(), allow_unsafe_jscode=True, height=300, theme="ag-theme-alpine", key=f"grid_{key_id}")
+
 # === タブ構成 ===
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "① 末尾・台番ゾロ目", 
-    "② 鉄板台ランキング", 
-    "③ 機種別", 
-    "④ 機種×末尾・ゾロ目",
-    "⑤ 🗺️ 店舗マップ分析"
-])
+tab1, tab2, tab5 = st.tabs(["① データ分析", "② 鉄板台ランキング", "③ 🗺️ 店舗マップ(図面)"])
 
-# ==========================================
-# 1. 特定日 × 台の末尾 & 台番ゾロ目
-# ==========================================
-with tab1:
-    col1, col2 = st.columns(2)
-    with col1:
-        st.subheader("🅰️ 通常の「台末尾 (0-9)」")
-        if "台番号" in target_df.columns:
-            matsubi_metrics = calculate_metrics(target_df, ["台末尾"])
-            st.plotly_chart(px.bar(matsubi_metrics, x="台末尾", y="平均差枚", 
-                         color="機械割", color_continuous_scale="RdYlGn",
-                         text="機械割", title="末尾 (0-9) の平均差枚"), use_container_width=True)
-            display_filterable_table(
-                matsubi_metrics[["台末尾", "勝率", "平均差枚", "平均G数", "機械割", "サンプル数"]],
-                key_id="tab1_norm"
-            )
-    with col2:
-        st.subheader("🅱️ 「台番ゾロ目 (11, 22...)」")
-        zorome_df = target_df[target_df["台ゾロ目タイプ"] != "通常"]
-        if zorome_df.empty:
-            st.info("データなし")
-        else:
-            zorome_metrics = calculate_metrics(zorome_df, ["台ゾロ目タイプ"])
-            st.plotly_chart(px.bar(zorome_metrics, x="台ゾロ目タイプ", y="平均差枚", 
-                         color="機械割", color_continuous_scale="RdYlGn",
-                         text="機械割", title="台番ゾロ目 (11〜00) の平均差枚"), use_container_width=True)
-            display_filterable_table(
-                zorome_metrics[["台ゾロ目タイプ", "勝率", "平均差枚", "平均G数", "機械割", "サンプル数"]],
-                key_id="tab1_zorome"
-            )
-
-# ==========================================
-# 2. 鉄板台ランキング
-# ==========================================
-with tab2:
-    st.subheader(f"② {title_str} の鉄板台ランキング")
-    if "台番号" not in target_df.columns:
-        st.error("台番号なし")
-    else:
-        col_s1, col_s2, col_s3 = st.columns([1, 1, 1])
-        with col_s1:
-            min_sample = st.slider("最低稼働回数", 1, 10, 1, key="tab2_slider_sample")
-        with col_s2:
-            min_diff_map = st.slider("最低平均差枚", -1000, 2000, 0, step=100, key="tab2_slider_diff", help="これ以下の差枚数の台は表示しません")
-        with col_s3:
-            st.write("") 
-            st.write("") 
-            only_active = st.checkbox("🟢 現役台のみ表示", value=True, help="チェックを入れると、すでに撤去された台は表示しません")
-
-        daiban_metrics = calculate_metrics(target_df, ["台番号", "機種"])
-        filtered = daiban_metrics[
-            (daiban_metrics["サンプル数"] >= min_sample) & 
-            (daiban_metrics["平均差枚"] >= min_diff_map)
-        ].copy()
-        
-        if filtered.empty:
-            st.warning("条件に合うデータがありません。")
-        else:
-            def check_status(row):
-                try:
-                    t_no = int(row["台番号"])
-                    current = latest_machine_map.get(t_no)
-                    if current and str(current).strip() == str(row["機種"]).strip():
-                        return "🟢現役"
-                    else:
-                        return "💀撤去"
-                except:
-                    return "❓不明"
-            
-            filtered["設置"] = filtered.apply(check_status, axis=1)
-            
-            if only_active:
-                filtered = filtered[filtered["設置"] == "🟢現役"]
-
-            if filtered.empty:
-                 st.warning("条件に合う現役台がありません。")
-            else:
-                filtered["表示名"] = filtered["設置"] + " " + filtered["台番号"].astype(str) + " (" + filtered["機種"] + ")"
-                fig = px.scatter(filtered, x="勝率", y="平均差枚", size="サンプル数", color="機械割", 
-                                 hover_name="表示名", text="台番号", color_continuous_scale="RdYlGn",
-                                 symbol="設置", title="勝率 vs 平均差枚")
-                fig.add_hline(y=0, line_dash="dash", line_color="gray")
-                fig.add_vline(x=50, line_dash="dash", line_color="gray")
-                st.plotly_chart(fig, use_container_width=True)
-                
-                disp_df = filtered[["設置", "台番号", "機種", "機械割", "勝率", "平均差枚", "平均G数", "サンプル数"]].sort_values(["設置", "機械割"], ascending=[True, False])
-                display_filterable_table(disp_df, key_id="tab2_ranking")
-
-# ==========================================
-# 3. 機種別
-# ==========================================
-with tab3:
-    st.subheader("③ 機種別ランキング")
-    model_metrics = calculate_metrics(target_df, ["機種"])
-    min_model = st.slider("最低稼働台数", 1, 10, 1, key="tab3_slider")
-    model_metrics = model_metrics[model_metrics["サンプル数"] >= min_model]
-    
-    if not model_metrics.empty:
-        model_metrics = model_metrics.sort_values("総差枚", ascending=False).head(20)
-        st.plotly_chart(px.bar(model_metrics, x="機械割", y="機種", orientation='h', color="総差枚", 
-                     color_continuous_scale="RdYlGn", text="機械割"), use_container_width=True)
-        display_filterable_table(
-            model_metrics[["機種", "機械割", "勝率", "平均差枚", "平均G数", "サンプル数"]],
-            key_id="tab3_model"
-        )
-
-# ==========================================
-# 4. 機種 × 末尾
-# ==========================================
-with tab4:
-    st.subheader("④ 機種 × 末尾・ゾロ目 の法則")
-    top_models = target_df["機種"].value_counts().head(10).index.tolist()
-    sel_models = st.multiselect("機種選択", sorted(target_df["機種"].unique()), default=top_models)
-
-    if sel_models:
-        c1, c2 = st.columns(2)
-        with c1:
-            st.markdown("##### 🅰️ 機種 × 通常末尾 (0-9)")
-            cross_norm = target_df.groupby(["機種", "台末尾"]).agg(総差枚=("総差枚", "sum"), 総G=("G数", "sum")).reset_index()
-            cross_norm["機械割"] = cross_norm.apply(lambda x: ((x["総G"]*3 + x["総差枚"])/(x["総G"]*3)*100) if x["総G"]>0 else 0, axis=1).round(1)
-            filt_norm = cross_norm[cross_norm["機種"].isin(sel_models)]
-            if not filt_norm.empty:
-                hm_norm = filt_norm.pivot(index="機種", columns="台末尾", values="機械割").fillna(0)
-                st.plotly_chart(px.imshow(hm_norm, labels=dict(x="末尾", y="機種", color="機械割"), 
-                                     zmin=90, zmax=110, aspect="auto", text_auto=True, color_continuous_scale="RdYlGn"), use_container_width=True)
-            else:
-                st.info("データなし")
-        with c2:
-            st.markdown("##### 🅱️ 機種 × 台番ゾロ目 (11, 22...)")
-            zorome_df_only = target_df[target_df["台ゾロ目タイプ"] != "通常"]
-            cross_zorome = zorome_df_only.groupby(["機種", "台ゾロ目タイプ"]).agg(総差枚=("総差枚", "sum"), 総G=("G数", "sum")).reset_index()
-            cross_zorome["機械割"] = cross_zorome.apply(lambda x: ((x["総G"]*3 + x["総差枚"])/(x["総G"]*3)*100) if x["総G"]>0 else 0, axis=1).round(1)
-            filt_zorome = cross_zorome[cross_zorome["機種"].isin(sel_models)]
-            if not filt_zorome.empty:
-                hm_zorome = filt_zorome.pivot(index="機種", columns="台ゾロ目タイプ", values="機械割").fillna(0)
-                st.plotly_chart(px.imshow(hm_zorome, labels=dict(x="ゾロ目", y="機種", color="機械割"), 
-                                       zmin=90, zmax=110, aspect="auto", text_auto=True, color_continuous_scale="RdYlGn"), use_container_width=True)
-            else:
-                st.info("ゾロ目データなし")
-
-# ==========================================
-# 5. 店舗マップ分析 (★改善版)
-# ==========================================
+# ----------------------------------------
+# 3. 店舗マップ分析 (HTMLグリッド版)
+# ----------------------------------------
 with tab5:
-    st.subheader("⑤ 🗺️ 店舗マップ分析")
-    
-    # 座標データチェック
     if map_coords is None:
-        st.warning("⚠️ 座標データが設定されていません。")
-        st.info("1. スプレッドシートに「台番号, Map_X, Map_Y」のカラムを作成\n2. 前述のCSVデータを貼り付け\n3. URLを `MAP_COORD_URL` に設定してください。")
+        st.warning("⚠️ 座標データURLが設定されていません。コード内の `MAP_COORD_URL` を確認してください。")
     else:
-        if "台番号" in target_df.columns:
-            # データの結合
-            metrics_df = calculate_metrics(target_df, ["台番号", "機種"])
-            merged_map = pd.merge(metrics_df, map_coords, on="台番号", how="inner")
+        # 1. データの準備
+        metrics_df = calculate_metrics(target_df, ["台番号", "機種"])
+        # 座標と結合 (Left Joinして、データがない台も座標があれば表示できるようにする)
+        merged_map = pd.merge(map_coords, metrics_df, on="台番号", how="left")
+        
+        # 2. マップ描画設定
+        c1, c2, c3 = st.columns([2, 1, 1])
+        with c1:
+            color_mode = st.radio("色分け", ["平均差枚", "勝率", "機械割"], horizontal=True)
+        with c2:
+            show_machine_name = st.checkbox("機種名を表示", value=True)
+        
+        # 3. グリッドのサイズ計算
+        max_x = int(merged_map["Map_X"].max())
+        max_y = int(merged_map["Map_Y"].max())
+        
+        # 4. ヒートマップ色の計算関数
+        def get_color(row, mode):
+            if pd.isna(row["サンプル数"]): return "#ffffff" # データなしは白
             
-            if merged_map.empty:
-                st.error("分析データと座標データで一致する台番号がありません。")
-            else:
-                st.markdown("##### 実際の配置図に基づくヒートマップ")
-                
-                # --- ★設定パネル ---
-                c1, c2, c3 = st.columns(3)
-                with c1:
-                    color_val = st.radio("色分け基準", ["平均差枚", "勝率", "機械割"], horizontal=True, key="real_map_color")
-                with c2:
-                    # マーカーサイズ調整 (通路を広く見せるため)
-                    marker_size = st.slider("点の大きさ", 10, 40, 25, key="map_marker_size")
-                with c3:
-                    # 機種名表示スイッチ
-                    show_name = st.checkbox("機種名を表示", value=False)
-                    if show_name:
-                        name_len = st.slider("文字数", 1, 10, 3, key="map_name_len")
-                        font_size = st.slider("文字サイズ", 6, 20, 10, key="map_font_size")
+            val = row[mode]
+            if mode == "平均差枚":
+                if val >= 1000: return "#ff9999" # 大勝 (赤)
+                if val >= 200: return "#ffcccc"  # 勝 (薄赤)
+                if val <= -500: return "#9999ff" # 負 (青)
+                if val < 0: return "#ccccff"     # 微負 (薄青)
+                return "#ffffff"
+            elif mode == "勝率":
+                if val >= 50: return "#ff9999"
+                if val >= 40: return "#ffcccc"
+                return "#ccccff"
+            elif mode == "機械割":
+                if val >= 105: return "#ff9999"
+                if val >= 100: return "#ffcccc"
+                return "#ccccff"
+            return "#ffffff"
 
-                # 表示用テキストの作成 (機種名を改行して入れる)
-                merged_map["Display_Text"] = merged_map["台番号"].astype(str)
-                if show_name:
-                    merged_map["Short_Name"] = merged_map["機種"].astype(str).str[:name_len]
-                    merged_map["Display_Text"] = merged_map["Display_Text"] + "<br>" + merged_map["Short_Name"]
+        # 5. HTML生成
+        # グリッドの定義
+        html = f'<div class="map-container" style="grid-template-columns: repeat({max_x}, 1fr);">'
+        
+        # マトリックスを作成して高速アクセス
+        grid_data = {}
+        for _, row in merged_map.iterrows():
+            grid_data[(int(row["Map_X"]), int(row["Map_Y"]))] = row
 
-                merged_map["Info"] = (
-                    "No." + merged_map["台番号"].astype(str) + "<br>" +
-                    merged_map["機種"] + "<br>" +
-                    "差枚: " + merged_map["平均差枚"].astype(str) + "枚<br>" +
-                    "勝率: " + merged_map["勝率"].astype(str) + "%"
-                )
+        # Y行 X列 でループ
+        for y in range(1, max_y + 1):
+            for x in range(1, max_x + 1):
+                cell_data = grid_data.get((x, y))
                 
-                # プロット作成
-                fig_real = px.scatter(
-                    merged_map, 
-                    x="Map_X", 
-                    y="Map_Y", 
-                    color=color_val,
-                    symbol_sequence=["square"], 
-                    hover_name="Info",
-                    text="Display_Text", # ★ここを変更
-                    color_continuous_scale="RdYlGn",
-                    title=f"店舗マップ ({color_val})"
-                )
-                
-                # 見た目の調整
-                fig_real.update_traces(
-                    marker=dict(size=marker_size, line=dict(width=1, color='gray')), 
-                    textposition='middle center', 
-                    textfont=dict(size=font_size if show_name else 10, color='black') # 文字サイズ調整
-                )
-                
-                # レイアウト調整 (ここが重要: 縦横比を固定して通路を確保)
-                fig_real.update_layout(
-                    xaxis=dict(showgrid=False, zeroline=False, visible=False, scaleanchor="y", scaleratio=1),
-                    yaxis=dict(showgrid=False, zeroline=False, visible=False, autorange="reversed"), 
-                    plot_bgcolor="#f0f2f6",
-                    height=800,
-                    width=800, # 画面サイズに合わせて自動調整されるが、比率は保たれる
-                    margin=dict(l=10, r=10, t=30, b=10)
-                )
-                
-                st.plotly_chart(fig_real, use_container_width=True)
-                
-                st.markdown("##### 📊 マップ内データの詳細")
-                display_filterable_table(
-                    merged_map[["台番号", "機種", "Map_X", "Map_Y", "勝率", "平均差枚", "平均G数", "機械割", "サンプル数"]].sort_values("台番号"),
-                    key_id="tab5_map_table"
-                )
+                if cell_data is None:
+                    # データがない場所 = 通路
+                    html += '<div class="map-cell map-aisle"></div>'
+                else:
+                    # データがある場所 = 台
+                    bg_color = get_color(cell_data, color_mode)
+                    
+                    # 機種名の処理 (ご要望: 内側に表示)
+                    # 奇数列(1,4...)は右寄せ(内側)、偶数列(2,5...)は左寄せ(内側)
+                    # CSSクラスで cell-odd / cell-even を切り替え
+                    css_class = "cell-odd" if x % 2 != 0 else "cell-even"
+                    
+                    m_no = int(cell_data["台番号"])
+                    m_name = str(cell_data["機種"]) if pd.notna(cell_data["機種"]) and show_machine_name else ""
+                    m_val = ""
+                    if pd.notna(cell_data["平均差枚"]):
+                        if color_mode == "平均差枚": m_val = f"{int(cell_data['平均差枚'])}"
+                        elif color_mode == "勝率": m_val = f"{cell_data['勝率']}%"
+                    
+                    # 表示内容: 番号は常に、名前と数値はオプション
+                    # 名前を短縮 (長すぎると崩れるため)
+                    short_name = m_name[:5] 
+                    
+                    # ツールチップ用テキスト
+                    tooltip = f"No.{m_no} {m_name}\n差枚:{cell_data.get('平均差枚',0)} 勝率:{cell_data.get('勝率',0)}%"
+
+                    html += f"""
+                    <div class="map-cell {css_class}" style="background-color: {bg_color};" title="{tooltip}">
+                        <div class="machine-name">{short_name}<br>{m_val}</div>
+                        <div class="machine-no">{m_no}</div>
+                    </div>
+                    """
+        
+        html += '</div>'
+        
+        # 6. Streamlitに表示
+        st.markdown(html, unsafe_allow_html=True)
+        
+        # 凡例
+        st.caption("🟥 赤: プラス差枚 / 🟦 青: マイナス差枚 / ⬜ 白: 稼働なし or プラマイゼロ")

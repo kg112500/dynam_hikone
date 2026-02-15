@@ -7,23 +7,23 @@ from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
 # 1. ホールデータのURL
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1wIdronWDW8xK0jDepQfWbFPBbnIVrkTls2hBDqcduVI/export?format=csv"
 
-# 2. 機種名変換リストのURL (指定されたURLを設定)
+# 2. 機種名変換リストのURL
 MAPPING_URL = "https://docs.google.com/spreadsheets/d/1wIdronWDW8xK0jDepQfWbFPBbnIVrkTls2hBDqcduVI/export?format=csv&gid=1849745164"
 
 # --- ページ設定 ---
 st.set_page_config(page_title="ダイナム彦根分析ツール", layout="wide")
 
-# ★追加: 余計なリンクやメニューを消すCSS
+# ★修正: 安全なCSS（フッターとメニューだけ消して、ヘッダー/サイドバーボタンは残す）
 hide_st_style = """
             <style>
             #MainMenu {visibility: hidden;}
             footer {visibility: hidden;}
-            header {visibility: hidden;}
             </style>
             """
 st.markdown(hide_st_style, unsafe_allow_html=True)
 
 st.title("🎰 ダイナム彦根分析ツール (Pro版)")
+
 # --- 1. データ読み込み ---
 @st.cache_data(ttl=600)
 def load_data():
@@ -59,13 +59,11 @@ def load_data():
     # 機種名の書き換え処理
     if MAPPING_URL and "機種" in df.columns:
         try:
-            # ヘッダーなし(header=None)で読み込み、A列を元名、B列を変換名として辞書化
             map_df = pd.read_csv(MAPPING_URL, header=None)
             if map_df.shape[1] >= 2:
                 rename_dict = dict(zip(map_df.iloc[:, 0], map_df.iloc[:, 1]))
                 df["機種"] = df["機種"].replace(rename_dict)
         except Exception as e:
-            # エラー時はスルーして元の名前のまま表示
             pass
 
     # 数値化処理
@@ -434,4 +432,3 @@ with tab4:
                                        zmin=90, zmax=110, aspect="auto", text_auto=True, color_continuous_scale="RdYlGn"), use_container_width=True)
             else:
                 st.info("ゾロ目データなし")
-

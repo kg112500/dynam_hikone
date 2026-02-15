@@ -90,111 +90,104 @@ if "台番号" in df.columns and "機種" in df.columns:
     except:
         pass
 
-# --- ★重要: フィルタリング機能付きテーブル表示関数 ---
+# --- ★修正: テーブル幅の最適化 ---
 def display_filterable_table(df_in, key_id):
     if df_in.empty:
         st.info("データがありません")
         return
 
-    # === ① スマホ用フィルター操作エリア (Excelのオートフィルターの代わり) ===
-    with st.expander("🔍 **絞り込み条件を開く (ここをタップ)**", expanded=False):
+    # === ① フィルター操作エリア ===
+    with st.expander("🔍 **絞り込み条件を開く**", expanded=False):
         c1, c2 = st.columns(2)
         
-        # 1. 機種名フィルター (存在する場合)
         df_filtered = df_in.copy()
         if "機種" in df_filtered.columns:
             all_machines = sorted(df_filtered["機種"].astype(str).unique())
             with c1:
                 selected_machines = st.multiselect(
-                    "機種を選択 (複数可)", 
-                    all_machines, 
-                    key=f"filter_machine_{key_id}",
-                    placeholder="全機種表示中..."
+                    "機種", all_machines, key=f"filter_machine_{key_id}", placeholder="全機種"
                 )
             if selected_machines:
                 df_filtered = df_filtered[df_filtered["機種"].isin(selected_machines)]
 
-        # 2. 差枚数フィルター (存在する場合)
         if "平均差枚" in df_filtered.columns:
             with c2:
-                min_diff = st.number_input(
-                    "平均差枚 (〇〇枚以上)", 
-                    value=0, step=100, 
-                    key=f"filter_diff_{key_id}"
-                )
+                min_diff = st.number_input("平均差枚以上", value=0, step=100, key=f"filter_diff_{key_id}")
             df_filtered = df_filtered[df_filtered["平均差枚"] >= min_diff]
 
-        # 3. 勝率フィルター (存在する場合)
         if "勝率" in df_filtered.columns:
             with c2:
-                min_win = st.slider(
-                    "勝率 (〇〇%以上)", 
-                    0, 100, 0, 
-                    key=f"filter_win_{key_id}"
-                )
+                min_win = st.slider("勝率以上(%)", 0, 100, 0, key=f"filter_win_{key_id}")
             df_filtered = df_filtered[df_filtered["勝率"] >= min_win]
 
-    # === ② 結果表示エリア (AgGrid) ===
+    # === ② 結果表示エリア ===
     st.markdown(f"<small>抽出件数: {len(df_filtered)} 件</small>", unsafe_allow_html=True)
 
     gb = GridOptionsBuilder.from_dataframe(df_filtered)
     
-    # 基本設定 (表内の文字入力フィルターも残しておく)
+    # ★変更: デフォルトの最小幅を小さく設定 (40px)
     gb.configure_default_column(
         resizable=True,
         filterable=True,
         sortable=True,
-        floatingFilter=True, # 表の中の検索窓も有効
+        floatingFilter=True,
         suppressMenuHide=True, 
-        minWidth=80,
+        minWidth=40, # 狭くできるようにする
     )
 
-    # JSによる色付け設定
-    style_machine_wari = JsCode("""
-    function(params) {
-        if (params.value >= 105) { return {'color': 'white', 'backgroundColor': '#006400'}; }
-        if (params.value >= 100) { return {'backgroundColor': '#90EE90'}; }
-        return null;
-    }
-    """)
-    style_diff = JsCode("""
-    function(params) {
-        if (params.value > 0) { return {'color': 'blue', 'fontWeight': 'bold'}; }
-        if (params.value < 0) { return {'color': 'red'}; }
-        return null;
-    }
-    """)
-    style_status = JsCode("""
-    function(params) {
-        if (params.value === '💀撤去') { return {'color': 'gray'}; }
-        return {'fontWeight': 'bold'};
-    }
-    """)
+    # JS設定
+    style_machine_wari = JsCode("""function(p){if(p.value>=105){return{'color':'white','backgroundColor':'#006400'};}if(p.value>=100){return{'backgroundColor':'#90EE90'};}return null;}""")
+    style_diff = JsCode("""function(p){if(p.value>0){return{'color':'blue','fontWeight':'bold'};}if(p.value<0){return{'color':'red'};}return null;}""")
+    style_status = JsCode("""function(p){if(p.value==='💀撤去'){return{'color':'gray'};}return{'fontWeight':'bold'};}""")
 
-    # 列定義
+    # --- ★列ごとの幅設定 (ダイエット) ---
+    
+    # 設置 (50px)
     if "設置" in df_filtered.columns:
-        gb.configure_column("設置", pinned="left", width=90, cellStyle=style_status)
+        gb.configure_column("設置", width=50, cellStyle=style_status) 
+        # pinned="left" はスマホの「全幅表示」と相性が悪いことがあるので外しました
+
+    # 台番号 (50px)
+    if "台番号" in df_filtered.columns:
+        gb.configure_column("台番号", width=50, type=["numericColumn"], valueFormatter="x.toLocaleString()")
+
+    # 機種 (flex=1: 余った幅を全部使う)
     if "機種" in df_filtered.columns:
-        gb.configure_column("機種", minWidth=150)
-    if "勝率" in df_filtered.columns:
-        gb.configure_column("勝率", type=["numericColumn"], precision=1, valueFormatter="x + '%'")
-    if "機械割" in df_filtered.columns:
-        gb.configure_column("機械割", type=["numericColumn"], precision=1, valueFormatter="x + '%'", cellStyle=style_machine_wari)
-    if "平均差枚" in df_filtered.columns:
-        gb.configure_column("平均差枚", type=["numericColumn"], valueFormatter="x.toLocaleString()", cellStyle=style_diff)
-    for col in ["総差枚", "平均G数", "総G数", "サンプル数", "台番号"]:
+        gb.configure_column("機種", minWidth=100, flex=1)
+
+    # 数値データはギリギリまで狭く (50-60px)
+    numeric_configs = {
+        "勝率": {"width": 60, "format": "x + '%'"},
+        "機械割": {"width": 60, "format": "x + '%'", "style": style_machine_wari},
+        "平均差枚": {"width": 70, "format": "x.toLocaleString()", "style": style_diff},
+        "総差枚": {"width": 70, "format": "x.toLocaleString()"},
+        "平均G数": {"width": 60, "format": "x.toLocaleString()"},
+        "総G数": {"width": 60, "format": "x.toLocaleString()"},
+        "サンプル数": {"width": 50, "format": "x.toLocaleString()"},
+        "台末尾": {"width": 50, "format": ""},
+        "台ゾロ目タイプ": {"width": 60, "format": ""}
+    }
+
+    for col, conf in numeric_configs.items():
         if col in df_filtered.columns:
-            gb.configure_column(col, type=["numericColumn"], valueFormatter="x.toLocaleString()")
+            c_style = conf.get("style", None)
+            gb.configure_column(col, 
+                                width=conf["width"], 
+                                type=["numericColumn"], 
+                                precision=1 if "%" in conf["format"] else 0,
+                                valueFormatter=conf["format"], 
+                                cellStyle=c_style)
 
     grid_options = gb.build()
     
+    # ★変更: fit_columns_on_grid_load=True (画面幅に強制的に収める)
     AgGrid(
         df_filtered,
         gridOptions=grid_options,
         allow_unsafe_jscode=True,
         enable_enterprise_modules=False,
         height=400,
-        fit_columns_on_grid_load=False,
+        fit_columns_on_grid_load=True, # これが「横スクロールなし」の決定打
         theme="ag-theme-alpine", 
         key=f"grid_{key_id}"
     )
@@ -336,7 +329,6 @@ with tab2:
             
             disp_df = filtered[["設置", "台番号", "機種", "機械割", "勝率", "平均差枚", "平均G数", "サンプル数"]].sort_values(["設置", "機械割"], ascending=[True, False])
             
-            # ★ここが変わりました：フィルター操作エリア付きテーブル
             display_filterable_table(disp_df, key_id="tab2_ranking")
 
 # ==========================================

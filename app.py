@@ -3,22 +3,20 @@ import pandas as pd
 import plotly.express as px
 from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
 
-# --- ★設定: データソース ---
+# --- ★設定: ユーザー指定のURL ---
 # 1. ホールデータのURL
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1wIdronWDW8xK0jDepQfWbFPBbnIVrkTls2hBDqcduVI/export?format=csv"
 
-# 2. 【新機能】機種名変換リストのURL (ここに変換用シートのCSV URLを貼る)
-# 例: ".../export?format=csv&gid=123456789"
-MAPPING_URL = "https://docs.google.com/spreadsheets/d/1wIdronWDW8xK0jDepQfWbFPBbnIVrkTls2hBDqcduVI/export?format=csv&gid=1849745164" 
+# 2. 機種名変換リストのURL (指定されたURLを設定)
+MAPPING_URL = "https://docs.google.com/spreadsheets/d/1wIdronWDW8xK0jDepQfWbFPBbnIVrkTls2hBDqcduVI/export?format=csv&gid=1849745164"
 
 # --- ページ設定 ---
 st.set_page_config(page_title="ダイナム彦根分析ツール", layout="wide")
-st.title("🎰 ダイナム彦根分析ツール")
+st.title("🎰 ダイナム彦根分析ツール (Pro版)")
 
 # --- 1. データ読み込み ---
 @st.cache_data(ttl=600)
 def load_data():
-    # A. メインデータの読み込み
     df = None
     if SHEET_URL:
         try:
@@ -48,23 +46,16 @@ def load_data():
                     df.rename(columns={found: std}, inplace=True)
                     break
 
-    # B. 【新機能】機種名の書き換え処理
+    # 機種名の書き換え処理
     if MAPPING_URL and "機種" in df.columns:
         try:
-            # 変換リストを読み込む (ヘッダーなしと仮定、または1行目を無視しても良いが、安全のためA列B列を使用)
-            # A列=元名, B列=短縮名 と想定
+            # ヘッダーなし(header=None)で読み込み、A列を元名、B列を変換名として辞書化
             map_df = pd.read_csv(MAPPING_URL, header=None)
-            
-            # 辞書を作成 { "長い名前": "短い名前" }
-            # 1行目がヘッダー("元名","短縮名")だった場合も考慮し、データとして読み込んで置換しても実害は少ない
-            rename_dict = dict(zip(map_df.iloc[:, 0], map_df.iloc[:, 1]))
-            
-            # 置換実行
-            df["機種"] = df["機種"].replace(rename_dict)
-            
+            if map_df.shape[1] >= 2:
+                rename_dict = dict(zip(map_df.iloc[:, 0], map_df.iloc[:, 1]))
+                df["機種"] = df["機種"].replace(rename_dict)
         except Exception as e:
-            # 変換リストの読み込みに失敗しても、メイン処理は止めない
-            print(f"機種名変換エラー: {e}")
+            # エラー時はスルーして元の名前のまま表示
             pass
 
     # 数値化処理
@@ -215,7 +206,6 @@ def display_filterable_table(df_in, key_id):
 # --- サイドバー ---
 st.sidebar.header("🎯 戦略設定")
 
-# ★機種名一覧を表示する便利機能
 if st.sidebar.checkbox("📋 元の機種名一覧を表示(コピペ用)"):
     st.sidebar.info("変換リスト作成用に、現在の機種名をコピーできます。")
     if "機種" in df.columns:
@@ -367,8 +357,10 @@ with tab2:
             if filtered.empty:
                  st.warning("条件に合う現役台がありません。")
             else:
+                filtered["表示名"] = filtered["設置"] + " " + filtered["台番号"].astype(str) + " (" + filtered["機種"] + ")"
+                
                 fig = px.scatter(filtered, x="勝率", y="平均差枚", size="サンプル数", color="機械割", 
-                                 hover_name="台番号", text="台番号", color_continuous_scale="RdYlGn",
+                                 hover_name="表示名", text="台番号", color_continuous_scale="RdYlGn",
                                  symbol="設置", title="勝率 vs 平均差枚")
                 
                 fig.add_hline(y=0, line_dash="dash", line_color="gray")
@@ -432,4 +424,3 @@ with tab4:
                                        zmin=90, zmax=110, aspect="auto", text_auto=True, color_continuous_scale="RdYlGn"), use_container_width=True)
             else:
                 st.info("ゾロ目データなし")
-

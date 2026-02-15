@@ -3,12 +3,12 @@ import pandas as pd
 import plotly.express as px
 
 # --- 設定 ---
-# スプレッドシートのURLがある場合はここに貼る
+# スプレッドシートURLがある場合はここに貼る
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1wIdronWDW8xK0jDepQfWbFPBbnIVrkTls2hBDqcduVI/export?format=csv" 
 
 # --- ページ設定 ---
-st.set_page_config(page_title="特定日攻略(機種別対応)", layout="wide")
-st.title("🎰 特定日攻略・狙い台分析ツール (機種入替対応版)")
+st.set_page_config(page_title="特定日攻略(ゾロ目対応)", layout="wide")
+st.title("🎰 特定日攻略・狙い台分析ツール (ゾロ目対応版)")
 
 # --- 1. データ読み込み ---
 @st.cache_data(ttl=600)
@@ -63,7 +63,13 @@ def load_data():
     
     # イベント属性
     df["DayNum"] = df["日付"].dt.day
+    df["Month"] = df["日付"].dt.month
     df["末尾"] = df["DayNum"] % 10 
+    
+    # ★ゾロ目判定ロジック (今回追加)
+    # 1. 毎月11日と22日
+    # 2. 月と日が同じ (1/1, 2/2 ... 11/11, 12/12)
+    df["is_Zorome"] = (df["DayNum"].isin([11, 22])) | (df["Month"] == df["DayNum"])
     
     if "台番号" in df.columns:
         df["台末尾"] = df["台番号"] % 10
@@ -92,27 +98,42 @@ dates = st.sidebar.date_input("分析期間", [min_d, max_d])
 if len(dates) == 2:
     df = df[(df["日付"].dt.date >= dates[0]) & (df["日付"].dt.date <= dates[1])]
 
-# 末尾選択
-st.sidebar.subheader("分析する日付末尾")
+st.sidebar.markdown("---")
+st.sidebar.subheader("📅 分析対象の日付を選択")
+
+# 1. 末尾選択
 target_ends = st.sidebar.multiselect(
-    "日付の末尾を選択", 
+    "① 日付の末尾 (0-9)", 
     options=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
-    default=[5] 
+    default=[] 
 )
 
-# データ抽出
+# 2. ゾロ目選択 (追加)
+use_zorome = st.sidebar.checkbox("② ゾロ目の日を含める", value=False, help="毎月11, 22日、および月日ゾロ目(1/1, 7/7等)")
+
+# データ抽出ロジック
+# 末尾選択 または ゾロ目選択 のいずれかに該当する行を抽出
+mask = pd.Series([False] * len(df), index=df.index) # 初期値False
+
 if target_ends:
-    target_df = df[df["末尾"].isin(target_ends)].copy()
-else:
+    mask = mask | df["末尾"].isin(target_ends)
+
+if use_zorome:
+    mask = mask | df["is_Zorome"]
+
+# 何も選んでいない場合は全データを表示するか、警告を出す
+if not target_ends and not use_zorome:
+    st.sidebar.warning("末尾またはゾロ目を選択してください。現在は全データを表示中。")
     target_df = df.copy()
+else:
+    target_df = df[mask].copy()
 
 if target_df.empty:
-    st.warning("指定した日付末尾のデータがありません。")
+    st.warning("条件に該当するデータがありません。")
     st.stop()
 
 # --- 共通計算ロジック ---
 def calculate_metrics(dataframe, group_cols):
-    # 指定されたカラム（リスト）でグループ化して集計
     agg = dataframe.groupby(group_cols).agg(
         サンプル数=("総差枚", "count"),
         勝数=("総差枚", lambda x: (x > 0).sum()),
@@ -122,7 +143,6 @@ def calculate_metrics(dataframe, group_cols):
         平均G数=("G数", "mean")
     ).reset_index()
     
-    # 指標計算
     agg["勝率"] = (agg["勝数"] / agg["サンプル数"] * 100).round(1)
     agg["機械割"] = agg.apply(
         lambda x: ((x["総G数"]*3 + x["総差枚"]) / (x["総G数"]*3) * 100) if x["総G数"] > 0 else 0, 
@@ -131,13 +151,21 @@ def calculate_metrics(dataframe, group_cols):
     
     return agg
 
-st.markdown(f"### 🎯 特定日分析（末尾 {target_ends} のつく日）")
-st.caption(f"抽出データ: {len(target_df)} 件")
+# タイトル生成
+title_parts = []
+if target_ends:
+    title_parts.append(f"末尾{target_ends}")
+if use_zorome:
+    title_parts.append("ゾロ目")
+title_str = " & ".join(title_parts) if title_parts else "全期間"
+
+st.markdown(f"### 🎯 分析対象: {title_str}")
+st.caption(f"抽出データ: {len(target_df)} 件 / 対象日数: {target_df['日付'].nunique()} 日")
 
 # === タブ構成 ===
 tab1, tab2, tab3, tab4 = st.tabs([
     "① 特定日×台末尾", 
-    "② 特定日×全台番(機種別)", # ★ここがメイン
+    "② 特定日×全台番(機種別)", 
     "③ 特定日×機種", 
     "④ 特定日×機種×末尾"
 ])
@@ -146,9 +174,11 @@ tab1, tab2, tab3, tab4 = st.tabs([
 # 1. 特定日 × 台の末尾
 # ==========================================
 with tab1:
-    st.subheader("① 台番号の「末尾」傾向")
+    st.subheader(f"① {title_str} における「台番号末尾」の傾向")
+    st.markdown("ゾロ目の日や特定日に、**どの台番末尾**に入れる癖があるか？")
+    
     if "台番号" in target_df.columns:
-        matsubi_metrics = calculate_metrics(target_df, ["台末尾"]) # リストで渡す
+        matsubi_metrics = calculate_metrics(target_df, ["台末尾"])
         
         fig = px.bar(matsubi_metrics, x="台末尾", y="平均差枚", 
                      color="機械割", color_continuous_scale="RdYlGn",
@@ -165,35 +195,28 @@ with tab1:
         )
 
 # ==========================================
-# 2. 特定日 × 全ての台番 (機種別分離・完成版)
+# 2. 特定日 × 全ての台番 (機種別分離)
 # ==========================================
 with tab2:
-    st.subheader("② 鉄板台ランキング（機種入替 対応版）")
-    st.markdown("同じ台番号でも、**機種が違う場合は別のデータ**として扱って集計しています。")
+    st.subheader(f"② {title_str} の鉄板台ランキング")
+    st.markdown("ゾロ目や特定日に**毎回強い台番号**を探します。")
     
     if "台番号" not in target_df.columns:
         st.error("台番号のデータがありません。")
     else:
-        # スライダー設定
         min_sample = st.slider("最低稼働回数", 1, 10, 1, key="tab2_slider")
         
-        # ★ここが修正ポイント
-        # 「台番号」と「機種」の2つでグルーピングする
         daiban_metrics = calculate_metrics(target_df, ["台番号", "機種"])
-        
-        # フィルタ
         filtered_metrics = daiban_metrics[daiban_metrics["サンプル数"] >= min_sample]
         
         if filtered_metrics.empty:
             st.warning(f"条件に合うデータがありません。")
         else:
-            # グラフ用に表示名を作る (例: "555 (マイジャグラー)")
             filtered_metrics["表示名"] = filtered_metrics["台番号"].astype(str) + " (" + filtered_metrics["機種"] + ")"
 
-            # 散布図
             fig = px.scatter(filtered_metrics, x="勝率", y="平均差枚", 
                              size="サンプル数", color="機械割", 
-                             hover_name="表示名", # マウスを乗せると機種名も出る
+                             hover_name="表示名",
                              hover_data=["台番号", "機種"],
                              text="台番号", 
                              color_continuous_scale="RdYlGn",
@@ -203,8 +226,6 @@ with tab2:
             fig.add_vline(x=50, line_dash="dash", line_color="gray")
             st.plotly_chart(fig, use_container_width=True)
             
-            # リスト表示
-            # 台番号と機種を並べて表示
             st.dataframe(
                 filtered_metrics[["台番号", "機種", "機械割", "勝率", "平均差枚", "平均G数", "サンプル数"]]
                 .sort_values("機械割", ascending=False)
@@ -217,7 +238,9 @@ with tab2:
 # 3. 特定日 × 機種
 # ==========================================
 with tab3:
-    st.subheader("③ 機種別 強さランキング")
+    st.subheader(f"③ {title_str} の機種別ランキング")
+    st.markdown("この特定日に**扱いが良い機種**は？")
+    
     model_metrics = calculate_metrics(target_df, ["機種"])
     
     min_model_sample = st.slider("最低稼働台数", 1, 10, 1, key="tab3_slider")
@@ -245,7 +268,7 @@ with tab3:
 # 4. 特定日 × 機種 × 末尾
 # ==========================================
 with tab4:
-    st.subheader("④ 機種 × 末尾 の法則")
+    st.subheader(f"④ {title_str} の 機種×末尾 法則")
     
     cross_metrics = target_df.groupby(["機種", "台末尾"]).agg(
         総差枚=("総差枚", "sum"),

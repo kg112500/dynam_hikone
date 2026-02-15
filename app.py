@@ -6,8 +6,8 @@ import plotly.express as px
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1wIdronWDW8xK0jDepQfWbFPBbnIVrkTls2hBDqcduVI/export?format=csv"
 
 # --- ページ設定 ---
-st.set_page_config(page_title="特定日攻略(完全版)", layout="wide")
-st.title("🎰 特定日攻略・狙い台分析ツール (表示統一版)")
+st.set_page_config(page_title="ダイナム彦根分析ツール", layout="wide")
+st.title("🎰 ダイナム彦根分析ツール")
 
 # --- 1. データ読み込み ---
 @st.cache_data(ttl=600)
@@ -208,7 +208,7 @@ with tab1:
             fig2.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
             st.plotly_chart(fig2, use_container_width=True)
             
-            # ★ここを左側と同じ項目・フォーマット・色設定にしました
+            # ★ここを左側と完全に一致させました（平均G数追加）
             st.dataframe(
                 zorome_metrics[["台ゾロ目タイプ", "勝率", "平均差枚", "平均G数", "機械割", "サンプル数"]]
                 .style.format({"勝率": "{:.1f}%", "平均差枚": "{:+,.0f}", "平均G数": "{:,.0f}", "機械割": "{:.1f}%"})

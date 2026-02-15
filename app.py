@@ -10,9 +10,10 @@ SHEET_URL = "https://docs.google.com/spreadsheets/d/1wIdronWDW8xK0jDepQfWbFPBbnI
 # 2. 機種名変換リストのURL
 MAPPING_URL = "https://docs.google.com/spreadsheets/d/1wIdronWDW8xK0jDepQfWbFPBbnIVrkTls2hBDqcduVI/export?format=csv&gid=1849745164"
 
-# 3. 【新機能】店舗図面(座標)データのURL
-# ここに「台番号, X, Y」が書かれたシートのCSV URLを貼ってください
+# 3. 店舗図面(座標)データのURL
+# 前回作成した「座標」シートのURLをここに貼ってください
 MAP_COORD_URL = "https://docs.google.com/spreadsheets/d/1wIdronWDW8xK0jDepQfWbFPBbnIVrkTls2hBDqcduVI/export?format=csv&gid=1743237199" 
+# ※もしURLがまだ決まっていなければ、前回のURL貼り付け作業を行ってください
 
 # --- ページ設定 ---
 st.set_page_config(page_title="ダイナム彦根分析ツール", layout="wide")
@@ -65,7 +66,6 @@ def load_data():
                     df.rename(columns={found: std}, inplace=True)
                     break
 
-    # 機種名変換
     if MAPPING_URL and "機種" in df.columns:
         try:
             map_df = pd.read_csv(MAPPING_URL, header=None)
@@ -113,12 +113,9 @@ def load_map_coordinates():
     if not MAP_COORD_URL:
         return None
     try:
-        # ヘッダーありと仮定: A列=台番号, B列=X, C列=Y
         coord_df = pd.read_csv(MAP_COORD_URL)
-        # カラム名のゆらぎ吸収
         coord_df.columns = coord_df.columns.str.strip()
         
-        # 台番号カラムを探す
         no_col = next((c for c in coord_df.columns if "台" in c or "No" in c), None)
         x_col = next((c for c in coord_df.columns if "X" in c.upper()), None)
         y_col = next((c for c in coord_df.columns if "Y" in c.upper()), None)
@@ -277,7 +274,7 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "② 鉄板台ランキング", 
     "③ 機種別", 
     "④ 機種×末尾・ゾロ目",
-    "⑤ 🗺️ 店舗マップ分析" # ★更新
+    "⑤ 🗺️ 店舗マップ分析"
 ])
 
 # ==========================================
@@ -358,7 +355,6 @@ with tab2:
                  st.warning("条件に合う現役台がありません。")
             else:
                 filtered["表示名"] = filtered["設置"] + " " + filtered["台番号"].astype(str) + " (" + filtered["機種"] + ")"
-                
                 fig = px.scatter(filtered, x="勝率", y="平均差枚", size="サンプル数", color="機械割", 
                                  hover_name="表示名", text="台番号", color_continuous_scale="RdYlGn",
                                  symbol="設置", title="勝率 vs 平均差枚")
@@ -422,51 +418,46 @@ with tab4:
                 st.info("ゾロ目データなし")
 
 # ==========================================
-# 5. 店舗マップ分析 (★座標データ対応)
+# 5. 店舗マップ分析 (★改善版)
 # ==========================================
 with tab5:
     st.subheader("⑤ 🗺️ 店舗マップ分析")
     
+    # 座標データチェック
     if map_coords is None:
         st.warning("⚠️ 座標データが設定されていません。")
-        st.info("1. スプレッドシートに「台番号, X, Y」のカラムを持つシートを作成してください。\n2. 作成したシートのCSV URLをコード上部の `MAP_COORD_URL` に貼り付けてください。")
-        # 座標がない場合は、簡易的な仮想マップを表示するフォールバック
-        if "台番号" in target_df.columns:
-            st.markdown("---")
-            st.write("※ 以下は台番号順に並べた**簡易仮想マップ**です（実際の配置とは異なります）")
-            map_metrics = calculate_metrics(target_df, ["台番号", "機種"])
-            cols_per_row = st.slider("1列(島)の台数", 10, 40, 20, key="map_cols_slider")
-            map_metrics = map_metrics.sort_values("台番号")
-            unique_machines = sorted(map_metrics["台番号"].unique())
-            machine_rank_map = {n: i for i, n in enumerate(unique_machines)}
-            map_metrics["Virtual_Rank"] = map_metrics["台番号"].map(machine_rank_map)
-            map_metrics["Map_X"] = map_metrics["Virtual_Rank"] % cols_per_row
-            map_metrics["Map_Y"] = (map_metrics["Virtual_Rank"] // cols_per_row) * -1
-            
-            color_val = st.radio("色分け基準", ["平均差枚", "勝率", "機械割"], horizontal=True, key="virtual_map_color")
-            map_metrics["Info"] = "No." + map_metrics["台番号"].astype(str) + "<br>" + map_metrics["機種"] + "<br>差枚: " + map_metrics["平均差枚"].astype(str)
-            
-            fig_map = px.scatter(map_metrics, x="Map_X", y="Map_Y", color=color_val, symbol_sequence=["square"], hover_name="Info", text="台番号", color_continuous_scale="RdYlGn", size_max=20, title="簡易マップ")
-            fig_map.update_traces(marker=dict(size=15, line=dict(width=1, color='DarkSlateGrey')), textposition='middle center', textfont=dict(size=8, color='black'))
-            fig_map.update_layout(xaxis=dict(showgrid=False, zeroline=False, visible=False), yaxis=dict(showgrid=False, zeroline=False, visible=False), plot_bgcolor="white", height=600)
-            st.plotly_chart(fig_map, use_container_width=True)
+        st.info("1. スプレッドシートに「台番号, Map_X, Map_Y」のカラムを作成\n2. 前述のCSVデータを貼り付け\n3. URLを `MAP_COORD_URL` に設定してください。")
     else:
-        # ★座標データがある場合の処理
         if "台番号" in target_df.columns:
-            # 分析データと座標データを合体
+            # データの結合
             metrics_df = calculate_metrics(target_df, ["台番号", "機種"])
-            # 台番号をキーにしてマージ
             merged_map = pd.merge(metrics_df, map_coords, on="台番号", how="inner")
             
             if merged_map.empty:
-                st.error("座標データと分析データで一致する台番号がありません。")
+                st.error("分析データと座標データで一致する台番号がありません。")
             else:
                 st.markdown("##### 実際の配置図に基づくヒートマップ")
                 
-                # 色分け基準
-                color_val = st.radio("色分け基準", ["平均差枚", "勝率", "機械割"], horizontal=True, key="real_map_color")
-                
-                # 表示情報
+                # --- ★設定パネル ---
+                c1, c2, c3 = st.columns(3)
+                with c1:
+                    color_val = st.radio("色分け基準", ["平均差枚", "勝率", "機械割"], horizontal=True, key="real_map_color")
+                with c2:
+                    # マーカーサイズ調整 (通路を広く見せるため)
+                    marker_size = st.slider("点の大きさ", 10, 40, 25, key="map_marker_size")
+                with c3:
+                    # 機種名表示スイッチ
+                    show_name = st.checkbox("機種名を表示", value=False)
+                    if show_name:
+                        name_len = st.slider("文字数", 1, 10, 3, key="map_name_len")
+                        font_size = st.slider("文字サイズ", 6, 20, 10, key="map_font_size")
+
+                # 表示用テキストの作成 (機種名を改行して入れる)
+                merged_map["Display_Text"] = merged_map["台番号"].astype(str)
+                if show_name:
+                    merged_map["Short_Name"] = merged_map["機種"].astype(str).str[:name_len]
+                    merged_map["Display_Text"] = merged_map["Display_Text"] + "<br>" + merged_map["Short_Name"]
+
                 merged_map["Info"] = (
                     "No." + merged_map["台番号"].astype(str) + "<br>" +
                     merged_map["機種"] + "<br>" +
@@ -474,9 +465,7 @@ with tab5:
                     "勝率: " + merged_map["勝率"].astype(str) + "%"
                 )
                 
-                # プロット (Y座標は反転させないと地図が上下逆になることが多いので調整用)
-                # ここではスプレッドシートの見た目通りにするため、Yはそのまま、必要ならデータ側で調整
-                
+                # プロット作成
                 fig_real = px.scatter(
                     merged_map, 
                     x="Map_X", 
@@ -484,30 +473,30 @@ with tab5:
                     color=color_val,
                     symbol_sequence=["square"], 
                     hover_name="Info",
-                    text="台番号",
+                    text="Display_Text", # ★ここを変更
                     color_continuous_scale="RdYlGn",
-                    size_max=25,
                     title=f"店舗マップ ({color_val})"
                 )
                 
+                # 見た目の調整
                 fig_real.update_traces(
-                    marker=dict(size=20, line=dict(width=1, color='gray')), 
+                    marker=dict(size=marker_size, line=dict(width=1, color='gray')), 
                     textposition='middle center', 
-                    textfont=dict(size=9, color='black')
+                    textfont=dict(size=font_size if show_name else 10, color='black') # 文字サイズ調整
                 )
                 
-                # レイアウト調整（縦横比を固定して歪まないようにする）
+                # レイアウト調整 (ここが重要: 縦横比を固定して通路を確保)
                 fig_real.update_layout(
                     xaxis=dict(showgrid=False, zeroline=False, visible=False, scaleanchor="y", scaleratio=1),
-                    yaxis=dict(showgrid=False, zeroline=False, visible=False, autorange="reversed"), # エクセルと同じく上が1になるように反転
+                    yaxis=dict(showgrid=False, zeroline=False, visible=False, autorange="reversed"), 
                     plot_bgcolor="#f0f2f6",
                     height=800,
-                    width=800
+                    width=800, # 画面サイズに合わせて自動調整されるが、比率は保たれる
+                    margin=dict(l=10, r=10, t=30, b=10)
                 )
                 
                 st.plotly_chart(fig_real, use_container_width=True)
                 
-                # 詳細データの表も下に表示
                 st.markdown("##### 📊 マップ内データの詳細")
                 display_filterable_table(
                     merged_map[["台番号", "機種", "Map_X", "Map_Y", "勝率", "平均差枚", "平均G数", "機械割", "サンプル数"]].sort_values("台番号"),

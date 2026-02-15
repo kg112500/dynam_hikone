@@ -12,8 +12,18 @@ MAPPING_URL = "https://docs.google.com/spreadsheets/d/1wIdronWDW8xK0jDepQfWbFPBb
 
 # --- ページ設定 ---
 st.set_page_config(page_title="ダイナム彦根分析ツール", layout="wide")
-st.title("🎰 ダイナム彦根分析ツール (Pro版)")
 
+# ★追加: 余計なリンクやメニューを消すCSS
+hide_st_style = """
+            <style>
+            #MainMenu {visibility: hidden;}
+            footer {visibility: hidden;}
+            header {visibility: hidden;}
+            </style>
+            """
+st.markdown(hide_st_style, unsafe_allow_html=True)
+
+st.title("🎰 ダイナム彦根分析ツール (Pro版)")
 # --- 1. データ読み込み ---
 @st.cache_data(ttl=600)
 def load_data():
@@ -424,3 +434,4 @@ with tab4:
                                        zmin=90, zmax=110, aspect="auto", text_auto=True, color_continuous_scale="RdYlGn"), use_container_width=True)
             else:
                 st.info("ゾロ目データなし")
+

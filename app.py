@@ -94,7 +94,7 @@ if "台番号" in df.columns and "機種" in df.columns:
         latest_machine_map = temp_df.loc[latest_indices].set_index("台番号")["機種"].to_dict()
     except: pass
 
-# --- テーブル表示関数 (数値フォーマット改修版) ---
+# --- テーブル表示関数 (修正版: fit_columns_on_grid_loadを追加) ---
 def display_filterable_table(df_in, key_id):
     if df_in.empty:
         st.info("データがありません")
@@ -159,13 +159,15 @@ def display_filterable_table(df_in, key_id):
 
     grid_options = gb.build()
     
+    # ★修正箇所: fit_columns_on_grid_load=True を追加して空欄列を排除
     AgGrid(
         df_filtered,
         gridOptions=grid_options,
         allow_unsafe_jscode=True,
         height=400,
         theme="ag-theme-alpine", 
-        key=f"grid_{key_id}"
+        key=f"grid_{key_id}",
+        fit_columns_on_grid_load=True
     )
 
 # --- サイドバー ---
@@ -436,7 +438,7 @@ with tab4:
                 hm_zorome = filt_zorome.pivot(index="機種", columns="台ゾロ目タイプ", values="機械割").fillna(0)
                 
                 fig5 = px.imshow(hm_zorome, labels=dict(x="ゾロ目", y="機種", color="機械割"), 
-                                      zmin=90, zmax=110, aspect="auto", text_auto=True, color_continuous_scale="RdYlGn")
+                                     zmin=90, zmax=110, aspect="auto", text_auto=True, color_continuous_scale="RdYlGn")
                 
                 # ヒートマップの数値フォーマット (.1f%)
                 fig5.update_traces(texttemplate="%{z:.1f}%", hovertemplate="機種: %{y}<br>ゾロ目: %{x}<br>機械割: %{z:.1f}%")

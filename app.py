@@ -94,7 +94,7 @@ if "台番号" in df.columns and "機種" in df.columns:
         latest_machine_map = temp_df.loc[latest_indices].set_index("台番号")["機種"].to_dict()
     except: pass
 
-# --- テーブル表示関数 ---
+# --- テーブル表示関数 (数値フォーマット改修版) ---
 def display_filterable_table(df_in, key_id):
     if df_in.empty:
         st.info("データがありません")
@@ -130,15 +130,36 @@ def display_filterable_table(df_in, key_id):
     gb = GridOptionsBuilder.from_dataframe(df_filtered)
     gb.configure_default_column(resizable=True, filterable=True, sortable=True, minWidth=40)
 
-    # JS設定
+    # --- Javascriptフォーマット定義 ---
+    # 1. カンマ区切り (例: 1,234)
+    fmt_comma = JsCode("""function(p){ return (p.value !== null && p.value !== undefined) ? p.value.toLocaleString() : ''; }""")
+    # 2. パーセント表示・小数第1位 (例: 105.5%)
+    fmt_percent = JsCode("""function(p){ return (p.value !== null && p.value !== undefined) ? Number(p.value).toFixed(1) + '%' : ''; }""")
+
+    # --- スタイル定義 ---
     style_machine_wari = JsCode("""function(p){if(p.value>=105){return{'color':'white','backgroundColor':'#006400'};}if(p.value>=100){return{'backgroundColor':'#90EE90'};}return null;}""")
     style_diff = JsCode("""function(p){if(p.value>0){return{'color':'blue','fontWeight':'bold'};}if(p.value<0){return{'color':'red'};}return null;}""")
     style_status = JsCode("""function(p){if(p.value==='💀撤去'){return{'color':'gray'};}return{'fontWeight':'bold'};}""")
 
+    # --- 列ごとの設定適用 ---
+    
+    # 1. パーセント系カラム (勝率, 機械割)
+    percent_cols = ["勝率", "機械割"]
+    for col in percent_cols:
+        if col in df_filtered.columns:
+            c_style = style_machine_wari if col == "機械割" else None
+            gb.configure_column(col, valueFormatter=fmt_percent, cellStyle=c_style, type=["numericColumn"], width=70)
+
+    # 2. 整数・カンマ区切り系カラム (差枚, G数, サンプル数など)
+    comma_cols = ["平均差枚", "総差枚", "平均G数", "総G数", "サンプル数", "前日差枚", "前日G数"]
+    for col in comma_cols:
+        if col in df_filtered.columns:
+            c_style = style_diff if "差枚" in col else None
+            gb.configure_column(col, valueFormatter=fmt_comma, cellStyle=c_style, type=["numericColumn"], width=80)
+
+    # 3. その他特殊カラム
     if "設置" in df_filtered.columns: gb.configure_column("設置", width=60, cellStyle=style_status)
     if "機種" in df_filtered.columns: gb.configure_column("機種", minWidth=120)
-    if "平均差枚" in df_filtered.columns: gb.configure_column("平均差枚", cellStyle=style_diff)
-    if "機械割" in df_filtered.columns: gb.configure_column("機械割", cellStyle=style_machine_wari)
 
     grid_options = gb.build()
     

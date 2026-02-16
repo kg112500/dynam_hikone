@@ -208,7 +208,7 @@ min_d, max_d = df["日付"].min(), df["日付"].max()
 
 # --- ★修正: スマホ対策で余白を追加 ---
 # カレンダーが画面外にはみ出ないよう、上にスペースを空けて位置を下げます
-st.sidebar.markdown("<br><br>", unsafe_allow_html=True) 
+st.sidebar.markdown("<br><br><br><br>", unsafe_allow_html=True) 
 # ----------------------------------
 
 dates = st.sidebar.date_input("分析期間", [min_d, max_d])
@@ -478,6 +478,7 @@ with tab4:
                 st.plotly_chart(fig5, use_container_width=True)
             else:
                 st.info("ゾロ目データなし")
+
 
 
 

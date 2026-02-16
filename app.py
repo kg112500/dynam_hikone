@@ -2,9 +2,12 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
+from datetime import datetime, timedelta
 
 # --- ★設定: ユーザー指定のURL ---
+# 読み込み先のスプレッドシート（CSVエクスポートリンク）
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1wIdronWDW8xK0jDepQfWbFPBbnIVrkTls2hBDqcduVI/export?format=csv"
+# 機種名マッピング（もしあれば）
 MAPPING_URL = "https://docs.google.com/spreadsheets/d/1wIdronWDW8xK0jDepQfWbFPBbnIVrkTls2hBDqcduVI/export?format=csv&gid=1849745164"
 
 # --- ページ設定 ---
@@ -63,28 +66,22 @@ def load_data():
     df["DayNum"] = df["日付"].dt.day
     df["Month"] = df["日付"].dt.month
     df["末尾"] = df["DayNum"] % 10 
-   # --- ゾロ目判定ロジックの強化版 ---
+    
+    # --- ★修正: ゾロ目判定ロジックの強化 (11/1なども含む) ---
     def check_is_zorome(row):
         d = row["DayNum"]
         m = row["Month"]
-        
         # パターン1: 日付が11日か22日 (強い特定日)
-        if d in [11, 22]:
-            return True
-            
+        if d in [11, 22]: return True
         # パターン2: 月と日が同じ (1/1, ... 12/12)
-        if m == d:
-            return True
-            
+        if m == d: return True
         # パターン3: 数字を並べて全部同じ文字になる (11/1 -> "111")
-        # これにより 11月1日 も対象になります
         s = str(m) + str(d)
-        if len(set(s)) == 1: # 文字の種類が1種類だけならゾロ目
-            return True
-            
+        if len(set(s)) == 1: return True
         return False
 
     df["is_Zorome"] = df.apply(check_is_zorome, axis=1)
+    # ----------------------------------------------------
     
     if "台番号" in df.columns:
         df["台末尾"] = df["台番号"] % 10
@@ -152,9 +149,7 @@ def display_filterable_table(df_in, key_id):
     gb.configure_default_column(resizable=True, filterable=True, sortable=True, minWidth=40)
 
     # --- Javascriptフォーマット定義 ---
-    # 1. カンマ区切り
     fmt_comma = JsCode("""function(p){ return (p.value !== null && p.value !== undefined) ? p.value.toLocaleString() : ''; }""")
-    # 2. パーセント表示・小数第1位
     fmt_percent = JsCode("""function(p){ return (p.value !== null && p.value !== undefined) ? Number(p.value).toFixed(1) + '%' : ''; }""")
 
     # --- スタイル定義 ---
@@ -191,9 +186,60 @@ def display_filterable_table(df_in, key_id):
         fit_columns_on_grid_load=True
     )
 
-# --- サイドバー ---
+# --- サイドバー (日付選択改善版) ---
 st.sidebar.header("🎯 戦略設定")
 
+# --- ① 期間選択ショートカット（日本語ボタン） ---
+# 期間をセッション状態で管理
+if "analysis_range" not in st.session_state:
+    st.session_state["analysis_range"] = [df["日付"].min().date(), df["日付"].max().date()]
+
+def set_range(mode):
+    today = datetime.now().date()
+    min_d_data = df["日付"].min().date()
+    max_d_data = df["日付"].max().date()
+    
+    if mode == "all":
+        st.session_state["analysis_range"] = [min_d_data, max_d_data]
+    elif mode == "week":
+        start = today - timedelta(days=6)
+        st.session_state["analysis_range"] = [max(start, min_d_data), min(today, max_d_data)]
+    elif mode == "month":
+        start = today.replace(day=1)
+        st.session_state["analysis_range"] = [max(start, min_d_data), min(today, max_d_data)]
+
+st.sidebar.markdown("📅 **期間をカンタン選択**")
+col_b1, col_b2, col_b3 = st.sidebar.columns(3)
+if col_b1.button("全期間"): set_range("all")
+if col_b2.button("過去7日"): set_range("week")
+if col_b3.button("今月"): set_range("month")
+
+# --- ② 日付入力カレンダー (format指定で日本語/数値化) ---
+min_d, max_d = df["日付"].min().date(), df["日付"].max().date()
+
+# ★修正: スマホ対策で余白を追加 (カレンダーが隠れないように)
+st.sidebar.markdown("<br>", unsafe_allow_html=True) 
+
+dates = st.sidebar.date_input(
+    "分析期間を指定",
+    value=st.session_state["analysis_range"],
+    min_value=min_d,
+    max_value=max_d,
+    format="YYYY/MM/DD",  # ★ここで英語表記(October等)を排除して数値にします
+    key="range_input",
+    on_change=lambda: st.session_state.update({"analysis_range": st.session_state.range_input})
+)
+
+# 期間フィルター適用
+if len(dates) == 2:
+    start_date, end_date = dates
+    df = df[(df["日付"].dt.date >= start_date) & (df["日付"].dt.date <= end_date)]
+elif len(dates) == 1:
+    start_date = dates[0]
+    df = df[df["日付"].dt.date == start_date]
+
+# --- その他のサイドバー設定 ---
+st.sidebar.markdown("---")
 if st.sidebar.checkbox("📋 元の機種名一覧を表示(コピペ用)"):
     st.sidebar.info("変換リスト作成用に、現在の機種名をコピーできます。")
     if "機種" in df.columns:
@@ -204,22 +250,11 @@ if st.sidebar.button("🔄 データを最新に更新"):
     st.cache_data.clear()
     st.rerun()
 
-min_d, max_d = df["日付"].min(), df["日付"].max()
-
-# --- ★修正: スマホ対策で余白を追加 ---
-# カレンダーが画面外にはみ出ないよう、上にスペースを空けて位置を下げます
-st.sidebar.markdown("<br><br><br><br><br><br>", unsafe_allow_html=True) 
-# ----------------------------------
-
-dates = st.sidebar.date_input("分析期間", [min_d, max_d])
-if len(dates) == 2:
-    df = df[(df["日付"].dt.date >= dates[0]) & (df["日付"].dt.date <= dates[1])]
-
 st.sidebar.markdown("---")
-st.sidebar.subheader("📅 分析対象の日付を選択")
+st.sidebar.subheader("📅 日付・条件フィルター")
 
 target_ends = st.sidebar.multiselect("① 日付の末尾 (0-9)", options=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9], default=[])
-use_zorome = st.sidebar.checkbox("② ゾロ目の日を含める", value=False)
+use_zorome = st.sidebar.checkbox("② ゾロ目の日を含める (11/1等も含む)", value=False)
 
 mask = pd.Series([False] * len(df), index=df.index)
 if target_ends: mask = mask | df["末尾"].isin(target_ends)
@@ -234,11 +269,10 @@ if target_df.empty:
     st.warning("条件に該当するデータがありません。")
     st.stop()
 
-# --- 共通計算ロジック ---
+# --- 共通計算ロジック (G数0の除外を追加) ---
 def calculate_metrics(dataframe, group_cols):
     
-    # ★追加: ここで「G数が0」のデータを除外してしまう
-    # これにより、稼働していない日は計算から無視されます
+    # ★修正: 稼働していない日(G数0)を除外して、正しい平均と勝率を出す
     dataframe = dataframe[dataframe["G数"] > 0]
 
     agg = dataframe.groupby(group_cols).agg(
@@ -275,13 +309,6 @@ tab1, tab2, tab3, tab4 = st.tabs([
     "④ 機種×末尾・ゾロ目"
 ])
 
-# --- Plotly共通設定用ヘルパー関数 ---
-def update_fig_format(fig, x_format=None, y_format=None):
-    # 軸の数値フォーマット（カンマ区切りなど）
-    if x_format: fig.update_xaxes(tickformat=x_format)
-    if y_format: fig.update_yaxes(tickformat=y_format)
-    return fig
-
 # ==========================================
 # 1. 特定日 × 台の末尾 & 台番ゾロ目
 # ==========================================
@@ -298,8 +325,8 @@ with tab1:
                           text="機械割", title="末尾 (0-9) の平均差枚")
             
             # フォーマット適用
-            fig1.update_traces(texttemplate='%{text:.1f}%', textposition='outside') # バーの上の数字を102.5%形式に
-            fig1.update_yaxes(tickformat=",") # Y軸（平均差枚）をカンマ区切りに
+            fig1.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
+            fig1.update_yaxes(tickformat=",")
             fig1.update_layout(xaxis=dict(tickmode='linear', dtick=1))
             
             st.plotly_chart(fig1, use_container_width=True)
@@ -389,11 +416,9 @@ with tab2:
                 fig.add_vline(x=50, line_dash="dash", line_color="gray")
                 
                 # フォーマット適用
-                # X軸: 勝率 (%), Y軸: 差枚 (カンマ)
                 fig.update_xaxes(tickformat=".1f", title_text="勝率 (%)")
                 fig.update_yaxes(tickformat=",", title_text="平均差枚 (枚)")
                 
-                # ホバー情報のフォーマットも調整 (機械割などを.1fに)
                 fig.update_traces(
                     hovertemplate="<b>%{hovertext}</b><br>勝率: %{x:.1f}%<br>平均差枚: %{y:,}枚<br>機械割: %{marker.color:.1f}%<br>サンプル: %{marker.size}"
                 )
@@ -419,9 +444,7 @@ with tab3:
                       color_continuous_scale="RdYlGn", text="機械割")
         
         # フォーマット適用
-        # 機械割バーのテキストを 102.5% 表記に
         fig3.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
-        # X軸(機械割)のフォーマット
         fig3.update_xaxes(tickformat=".1f", title_text="機械割 (%)")
         
         st.plotly_chart(fig3, use_container_width=True)
@@ -444,7 +467,11 @@ with tab4:
         c1, c2 = st.columns(2)
         with c1:
             st.markdown("##### 🅰️ 機種 × 通常末尾 (0-9)")
-            cross_norm = target_df.groupby(["機種", "台末尾"]).agg(総差枚=("総差枚", "sum"), 総G=("G数", "sum")).reset_index()
+            
+            # ヒートマップ用にもG数フィルターを適用したデータを使用
+            df_heat = target_df[target_df["G数"] > 0]
+            
+            cross_norm = df_heat.groupby(["機種", "台末尾"]).agg(総差枚=("総差枚", "sum"), 総G=("G数", "sum")).reset_index()
             cross_norm["機械割"] = cross_norm.apply(lambda x: ((x["総G"]*3 + x["総差枚"])/(x["総G"]*3)*100) if x["総G"]>0 else 0, axis=1).round(1)
             filt_norm = cross_norm[cross_norm["機種"].isin(sel_models)]
             if not filt_norm.empty:
@@ -453,7 +480,6 @@ with tab4:
                 fig4 = px.imshow(hm_norm, labels=dict(x="末尾", y="機種", color="機械割"), 
                                      zmin=90, zmax=110, aspect="auto", text_auto=True, color_continuous_scale="RdYlGn")
                 
-                # ヒートマップの数値フォーマット (.1f%)
                 fig4.update_traces(texttemplate="%{z:.1f}%", hovertemplate="機種: %{y}<br>末尾: %{x}<br>機械割: %{z:.1f}%")
                 
                 st.plotly_chart(fig4, use_container_width=True)
@@ -462,7 +488,8 @@ with tab4:
 
         with c2:
             st.markdown("##### 🅱️ 機種 × 台番ゾロ目 (11, 22...)")
-            zorome_df_only = target_df[target_df["台ゾロ目タイプ"] != "通常"]
+            
+            zorome_df_only = df_heat[df_heat["台ゾロ目タイプ"] != "通常"]
             cross_zorome = zorome_df_only.groupby(["機種", "台ゾロ目タイプ"]).agg(総差枚=("総差枚", "sum"), 総G=("G数", "sum")).reset_index()
             cross_zorome["機械割"] = cross_zorome.apply(lambda x: ((x["総G"]*3 + x["総差枚"])/(x["総G"]*3)*100) if x["総G"]>0 else 0, axis=1).round(1)
             filt_zorome = cross_zorome[cross_zorome["機種"].isin(sel_models)]
@@ -472,14 +499,8 @@ with tab4:
                 fig5 = px.imshow(hm_zorome, labels=dict(x="ゾロ目", y="機種", color="機械割"), 
                                      zmin=90, zmax=110, aspect="auto", text_auto=True, color_continuous_scale="RdYlGn")
                 
-                # ヒートマップの数値フォーマット (.1f%)
                 fig5.update_traces(texttemplate="%{z:.1f}%", hovertemplate="機種: %{y}<br>ゾロ目: %{x}<br>機械割: %{z:.1f}%")
                 
                 st.plotly_chart(fig5, use_container_width=True)
             else:
                 st.info("ゾロ目データなし")
-
-
-
-
-

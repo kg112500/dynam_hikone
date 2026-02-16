@@ -230,6 +230,11 @@ if target_df.empty:
 
 # --- 共通計算ロジック ---
 def calculate_metrics(dataframe, group_cols):
+    
+    # ★追加: ここで「G数が0」のデータを除外してしまう
+    # これにより、稼働していない日は計算から無視されます
+    dataframe = dataframe[dataframe["G数"] > 0]
+
     agg = dataframe.groupby(group_cols).agg(
         サンプル数=("総差枚", "count"),
         勝数=("総差枚", lambda x: (x > 0).sum()),
@@ -467,4 +472,5 @@ with tab4:
                 st.plotly_chart(fig5, use_container_width=True)
             else:
                 st.info("ゾロ目データなし")
+
 

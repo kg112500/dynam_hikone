@@ -63,7 +63,28 @@ def load_data():
     df["DayNum"] = df["日付"].dt.day
     df["Month"] = df["日付"].dt.month
     df["末尾"] = df["DayNum"] % 10 
-    df["is_Zorome"] = (df["DayNum"].isin([11, 22])) | (df["Month"] == df["DayNum"])
+   # --- ゾロ目判定ロジックの強化版 ---
+    def check_is_zorome(row):
+        d = row["DayNum"]
+        m = row["Month"]
+        
+        # パターン1: 日付が11日か22日 (強い特定日)
+        if d in [11, 22]:
+            return True
+            
+        # パターン2: 月と日が同じ (1/1, ... 12/12)
+        if m == d:
+            return True
+            
+        # パターン3: 数字を並べて全部同じ文字になる (11/1 -> "111")
+        # これにより 11月1日 も対象になります
+        s = str(m) + str(d)
+        if len(set(s)) == 1: # 文字の種類が1種類だけならゾロ目
+            return True
+            
+        return False
+
+    df["is_Zorome"] = df.apply(check_is_zorome, axis=1)
     
     if "台番号" in df.columns:
         df["台末尾"] = df["台番号"] % 10
@@ -446,3 +467,4 @@ with tab4:
                 st.plotly_chart(fig5, use_container_width=True)
             else:
                 st.info("ゾロ目データなし")
+

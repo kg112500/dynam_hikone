@@ -205,6 +205,12 @@ if st.sidebar.button("🔄 データを最新に更新"):
     st.rerun()
 
 min_d, max_d = df["日付"].min(), df["日付"].max()
+
+# --- ★修正: スマホ対策で余白を追加 ---
+# カレンダーが画面外にはみ出ないよう、上にスペースを空けて位置を下げます
+st.sidebar.markdown("<br><br>", unsafe_allow_html=True) 
+# ----------------------------------
+
 dates = st.sidebar.date_input("分析期間", [min_d, max_d])
 if len(dates) == 2:
     df = df[(df["日付"].dt.date >= dates[0]) & (df["日付"].dt.date <= dates[1])]
@@ -472,5 +478,6 @@ with tab4:
                 st.plotly_chart(fig5, use_container_width=True)
             else:
                 st.info("ゾロ目データなし")
+
 
 

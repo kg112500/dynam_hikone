@@ -131,9 +131,9 @@ def display_filterable_table(df_in, key_id):
     gb.configure_default_column(resizable=True, filterable=True, sortable=True, minWidth=40)
 
     # --- Javascriptフォーマット定義 ---
-    # 1. カンマ区切り (例: 1,234)
+    # 1. カンマ区切り
     fmt_comma = JsCode("""function(p){ return (p.value !== null && p.value !== undefined) ? p.value.toLocaleString() : ''; }""")
-    # 2. パーセント表示・小数第1位 (例: 105.5%)
+    # 2. パーセント表示・小数第1位
     fmt_percent = JsCode("""function(p){ return (p.value !== null && p.value !== undefined) ? Number(p.value).toFixed(1) + '%' : ''; }""")
 
     # --- スタイル定義 ---
@@ -142,22 +142,18 @@ def display_filterable_table(df_in, key_id):
     style_status = JsCode("""function(p){if(p.value==='💀撤去'){return{'color':'gray'};}return{'fontWeight':'bold'};}""")
 
     # --- 列ごとの設定適用 ---
-    
-    # 1. パーセント系カラム (勝率, 機械割)
     percent_cols = ["勝率", "機械割"]
     for col in percent_cols:
         if col in df_filtered.columns:
             c_style = style_machine_wari if col == "機械割" else None
             gb.configure_column(col, valueFormatter=fmt_percent, cellStyle=c_style, type=["numericColumn"], width=70)
 
-    # 2. 整数・カンマ区切り系カラム (差枚, G数, サンプル数など)
     comma_cols = ["平均差枚", "総差枚", "平均G数", "総G数", "サンプル数", "前日差枚", "前日G数"]
     for col in comma_cols:
         if col in df_filtered.columns:
             c_style = style_diff if "差枚" in col else None
             gb.configure_column(col, valueFormatter=fmt_comma, cellStyle=c_style, type=["numericColumn"], width=80)
 
-    # 3. その他特殊カラム
     if "設置" in df_filtered.columns: gb.configure_column("設置", width=60, cellStyle=style_status)
     if "機種" in df_filtered.columns: gb.configure_column("機種", minWidth=120)
 
@@ -245,6 +241,13 @@ tab1, tab2, tab3, tab4 = st.tabs([
     "④ 機種×末尾・ゾロ目"
 ])
 
+# --- Plotly共通設定用ヘルパー関数 ---
+def update_fig_format(fig, x_format=None, y_format=None):
+    # 軸の数値フォーマット（カンマ区切りなど）
+    if x_format: fig.update_xaxes(tickformat=x_format)
+    if y_format: fig.update_yaxes(tickformat=y_format)
+    return fig
+
 # ==========================================
 # 1. 特定日 × 台の末尾 & 台番ゾロ目
 # ==========================================
@@ -254,9 +257,19 @@ with tab1:
         st.subheader("🅰️ 通常の「台末尾 (0-9)」")
         if "台番号" in target_df.columns:
             matsubi_metrics = calculate_metrics(target_df, ["台末尾"])
-            st.plotly_chart(px.bar(matsubi_metrics, x="台末尾", y="平均差枚", 
+            
+            # 機械割のバーチャート
+            fig1 = px.bar(matsubi_metrics, x="台末尾", y="平均差枚", 
                           color="機械割", color_continuous_scale="RdYlGn",
-                          text="機械割", title="末尾 (0-9) の平均差枚"), use_container_width=True)
+                          text="機械割", title="末尾 (0-9) の平均差枚")
+            
+            # フォーマット適用
+            fig1.update_traces(texttemplate='%{text:.1f}%', textposition='outside') # バーの上の数字を102.5%形式に
+            fig1.update_yaxes(tickformat=",") # Y軸（平均差枚）をカンマ区切りに
+            fig1.update_layout(xaxis=dict(tickmode='linear', dtick=1))
+            
+            st.plotly_chart(fig1, use_container_width=True)
+            
             display_filterable_table(
                 matsubi_metrics[["台末尾", "勝率", "平均差枚", "平均G数", "機械割", "サンプル数"]],
                 key_id="tab1_norm"
@@ -269,9 +282,17 @@ with tab1:
             st.info("データなし")
         else:
             zorome_metrics = calculate_metrics(zorome_df, ["台ゾロ目タイプ"])
-            st.plotly_chart(px.bar(zorome_metrics, x="台ゾロ目タイプ", y="平均差枚", 
+            
+            fig2 = px.bar(zorome_metrics, x="台ゾロ目タイプ", y="平均差枚", 
                           color="機械割", color_continuous_scale="RdYlGn",
-                          text="機械割", title="台番ゾロ目 (11〜00) の平均差枚"), use_container_width=True)
+                          text="機械割", title="台番ゾロ目 (11〜00) の平均差枚")
+            
+            # フォーマット適用
+            fig2.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
+            fig2.update_yaxes(tickformat=",")
+            
+            st.plotly_chart(fig2, use_container_width=True)
+            
             display_filterable_table(
                 zorome_metrics[["台ゾロ目タイプ", "勝率", "平均差枚", "平均G数", "機械割", "サンプル数"]],
                 key_id="tab1_zorome"
@@ -332,6 +353,17 @@ with tab2:
                 
                 fig.add_hline(y=0, line_dash="dash", line_color="gray")
                 fig.add_vline(x=50, line_dash="dash", line_color="gray")
+                
+                # フォーマット適用
+                # X軸: 勝率 (%), Y軸: 差枚 (カンマ)
+                fig.update_xaxes(tickformat=".1f", title_text="勝率 (%)")
+                fig.update_yaxes(tickformat=",", title_text="平均差枚 (枚)")
+                
+                # ホバー情報のフォーマットも調整 (機械割などを.1fに)
+                fig.update_traces(
+                    hovertemplate="<b>%{hovertext}</b><br>勝率: %{x:.1f}%<br>平均差枚: %{y:,}枚<br>機械割: %{marker.color:.1f}%<br>サンプル: %{marker.size}"
+                )
+                
                 st.plotly_chart(fig, use_container_width=True)
                 
                 disp_df = filtered[["設置", "台番号", "機種", "機械割", "勝率", "平均差枚", "平均G数", "サンプル数"]].sort_values(["設置", "機械割"], ascending=[True, False])
@@ -348,8 +380,17 @@ with tab3:
     
     if not model_metrics.empty:
         model_metrics = model_metrics.sort_values("総差枚", ascending=False).head(20)
-        st.plotly_chart(px.bar(model_metrics, x="機械割", y="機種", orientation='h', color="総差枚", 
-                      color_continuous_scale="RdYlGn", text="機械割"), use_container_width=True)
+        
+        fig3 = px.bar(model_metrics, x="機械割", y="機種", orientation='h', color="総差枚", 
+                      color_continuous_scale="RdYlGn", text="機械割")
+        
+        # フォーマット適用
+        # 機械割バーのテキストを 102.5% 表記に
+        fig3.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
+        # X軸(機械割)のフォーマット
+        fig3.update_xaxes(tickformat=".1f", title_text="機械割 (%)")
+        
+        st.plotly_chart(fig3, use_container_width=True)
         
         display_filterable_table(
             model_metrics[["機種", "機械割", "勝率", "平均差枚", "平均G数", "サンプル数"]],
@@ -374,8 +415,14 @@ with tab4:
             filt_norm = cross_norm[cross_norm["機種"].isin(sel_models)]
             if not filt_norm.empty:
                 hm_norm = filt_norm.pivot(index="機種", columns="台末尾", values="機械割").fillna(0)
-                st.plotly_chart(px.imshow(hm_norm, labels=dict(x="末尾", y="機種", color="機械割"), 
-                                     zmin=90, zmax=110, aspect="auto", text_auto=True, color_continuous_scale="RdYlGn"), use_container_width=True)
+                
+                fig4 = px.imshow(hm_norm, labels=dict(x="末尾", y="機種", color="機械割"), 
+                                     zmin=90, zmax=110, aspect="auto", text_auto=True, color_continuous_scale="RdYlGn")
+                
+                # ヒートマップの数値フォーマット (.1f%)
+                fig4.update_traces(texttemplate="%{z:.1f}%", hovertemplate="機種: %{y}<br>末尾: %{x}<br>機械割: %{z:.1f}%")
+                
+                st.plotly_chart(fig4, use_container_width=True)
             else:
                 st.info("データなし")
 
@@ -387,7 +434,13 @@ with tab4:
             filt_zorome = cross_zorome[cross_zorome["機種"].isin(sel_models)]
             if not filt_zorome.empty:
                 hm_zorome = filt_zorome.pivot(index="機種", columns="台ゾロ目タイプ", values="機械割").fillna(0)
-                st.plotly_chart(px.imshow(hm_zorome, labels=dict(x="ゾロ目", y="機種", color="機械割"), 
-                                      zmin=90, zmax=110, aspect="auto", text_auto=True, color_continuous_scale="RdYlGn"), use_container_width=True)
+                
+                fig5 = px.imshow(hm_zorome, labels=dict(x="ゾロ目", y="機種", color="機械割"), 
+                                      zmin=90, zmax=110, aspect="auto", text_auto=True, color_continuous_scale="RdYlGn")
+                
+                # ヒートマップの数値フォーマット (.1f%)
+                fig5.update_traces(texttemplate="%{z:.1f}%", hovertemplate="機種: %{y}<br>ゾロ目: %{x}<br>機械割: %{z:.1f}%")
+                
+                st.plotly_chart(fig5, use_container_width=True)
             else:
                 st.info("ゾロ目データなし")

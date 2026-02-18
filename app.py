@@ -156,7 +156,7 @@ def display_filterable_table(df_in, key_id):
                 valueFormatter=fmt_percent, 
                 cellStyle=c_style, 
                 type=["numericColumn"], 
-                width=80
+                width=60
             )
 
     # 2. 数値系 (差枚, G数, 台番) -> 幅80〜100px
@@ -484,6 +484,7 @@ with tab4:
                 fig5.update_traces(texttemplate="%{z:.1f}%", hovertemplate="機種: %{y}<br>ゾロ目: %{x}<br>機械割: %{z:.1f}%")
                 st.plotly_chart(fig5, use_container_width=True)
             else: st.info("ゾロ目データなし")
+
 
 
 

@@ -136,7 +136,7 @@ def display_filterable_table(df_in, key_id):
     gb = GridOptionsBuilder.from_dataframe(df_filtered)
     
     # ★変更: 全ての列の基本幅を「60px」に設定
-    gb.configure_default_column(resizable=True, filterable=True, sortable=True, width=50, minWidth=40)
+    gb.configure_default_column(resizable=True, filterable=True, sortable=True, width=60, minWidth=40)
 
     # --- Javascriptフォーマット定義 ---
     fmt_comma = JsCode("""function(p){ return (p.value !== null && p.value !== undefined) ? p.value.toLocaleString() : ''; }""")
@@ -149,7 +149,7 @@ def display_filterable_table(df_in, key_id):
     
     # 1. 機種名 -> 幅100px (ここだけ上書き)
     if "機種" in df_filtered.columns: 
-        gb.configure_column("機種", width=80)
+        gb.configure_column("機種", width=100)
 
     # 2. パーセント系 (勝率, 機械割) -> 幅60px
     percent_cols = ["勝率", "機械割"]
@@ -174,16 +174,16 @@ def display_filterable_table(df_in, key_id):
                 valueFormatter=fmt_comma, 
                 cellStyle=c_style, 
                 type=["numericColumn"], 
-                width=50 # 明示的に60
+                width=60 # 明示的に60
             )
             
     # 4. ゾロ目タイプ -> 幅60px
     if "台ゾロ目タイプ" in df_filtered.columns:
-        gb.configure_column("台ゾロ目タイプ", width=50)
+        gb.configure_column("台ゾロ目タイプ", width=60)
 
     # 5. 設置状態 -> 幅60px
     if "設置" in df_filtered.columns: 
-        gb.configure_column("設置", width=50, cellStyle=style_status)
+        gb.configure_column("設置", width=60, cellStyle=style_status)
 
     grid_options = gb.build()
     
@@ -483,6 +483,7 @@ with tab4:
                 fig5.update_traces(texttemplate="%{z:.1f}%", hovertemplate="機種: %{y}<br>ゾロ目: %{x}<br>機械割: %{z:.1f}%")
                 st.plotly_chart(fig5, use_container_width=True)
             else: st.info("ゾロ目データなし")
+
 
 
 

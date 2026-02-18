@@ -103,12 +103,13 @@ if "台番号" in df.columns and "機種" in df.columns:
         latest_machine_map = temp_df.loc[latest_indices].set_index("台番号")["機種"].to_dict()
     except: pass
 
-# --- テーブル表示関数 ---
+# --- テーブル表示関数 (幅調整・CSVダウンロード付き) ---
 def display_filterable_table(df_in, key_id):
     if df_in.empty:
         st.info("データがありません")
         return
 
+    # === ① フィルター操作エリア ===
     with st.expander("🔍 **絞り込み条件を開く**", expanded=False):
         c1, c2 = st.columns(2)
         df_filtered = df_in.copy()
@@ -129,34 +130,70 @@ def display_filterable_table(df_in, key_id):
                 min_win = st.slider("勝率以上(%)", 0, 100, 0, key=f"filter_win_{key_id}")
             df_filtered = df_filtered[df_filtered["勝率"] >= min_win]
 
+    # === ② 結果表示エリア ===
     st.markdown(f"<small>抽出件数: {len(df_filtered)} 件</small>", unsafe_allow_html=True)
 
     gb = GridOptionsBuilder.from_dataframe(df_filtered)
-    gb.configure_default_column(resizable=True, filterable=True, sortable=True, minWidth=40)
+    # デフォルト設定: リサイズ可能にする
+    gb.configure_default_column(resizable=True, filterable=True, sortable=True)
 
+    # --- Javascriptフォーマット定義 ---
     fmt_comma = JsCode("""function(p){ return (p.value !== null && p.value !== undefined) ? p.value.toLocaleString() : ''; }""")
     fmt_percent = JsCode("""function(p){ return (p.value !== null && p.value !== undefined) ? Number(p.value).toFixed(1) + '%' : ''; }""")
     style_machine_wari = JsCode("""function(p){if(p.value>=105){return{'color':'white','backgroundColor':'#006400'};}if(p.value>=100){return{'backgroundColor':'#90EE90'};}return null;}""")
     style_diff = JsCode("""function(p){if(p.value>0){return{'color':'blue','fontWeight':'bold'};}if(p.value<0){return{'color':'red'};}return null;}""")
     style_status = JsCode("""function(p){if(p.value==='💀撤去'){return{'color':'gray'};}return{'fontWeight':'bold'};}""")
 
+    # --- 列ごとの幅調整設定 ---
+    
+    # 1. パーセント系 (勝率, 機械割) -> 幅を固定 (suppressSizeToFit=True)
     percent_cols = ["勝率", "機械割"]
     for col in percent_cols:
         if col in df_filtered.columns:
             c_style = style_machine_wari if col == "機械割" else None
-            gb.configure_column(col, valueFormatter=fmt_percent, cellStyle=c_style, type=["numericColumn"], width=70)
+            gb.configure_column(
+                col, 
+                valueFormatter=fmt_percent, 
+                cellStyle=c_style, 
+                type=["numericColumn"], 
+                width=80,             # 幅指定
+                suppressSizeToFit=True # ★自動引き伸ばしを禁止
+            )
 
-    comma_cols = ["平均差枚", "総差枚", "平均G数", "総G数", "サンプル数", "前日差枚", "前日G数"]
+    # 2. 数値系 (差枚, G数, 台番) -> 幅を固定
+    comma_cols = ["平均差枚", "総差枚", "平均G数", "総G数", "サンプル数", "前日差枚", "前日G数", "台番号", "台末尾"]
     for col in comma_cols:
         if col in df_filtered.columns:
             c_style = style_diff if "差枚" in col else None
-            gb.configure_column(col, valueFormatter=fmt_comma, cellStyle=c_style, type=["numericColumn"], width=80)
+            # 台番号などは少し狭く、差枚などは少し広く
+            w = 70 if "台" in col or "サンプル" in col else 90
+            gb.configure_column(
+                col, 
+                valueFormatter=fmt_comma, 
+                cellStyle=c_style, 
+                type=["numericColumn"], 
+                width=w, 
+                suppressSizeToFit=True # ★自動引き伸ばしを禁止
+            )
+            
+    # 3. ゾロ目タイプ
+    if "台ゾロ目タイプ" in df_filtered.columns:
+        gb.configure_column("台ゾロ目タイプ", width=90, suppressSizeToFit=True)
 
-    if "設置" in df_filtered.columns: gb.configure_column("設置", width=60, cellStyle=style_status)
-    if "機種" in df_filtered.columns: gb.configure_column("機種", minWidth=120)
+    # 4. 設置状態
+    if "設置" in df_filtered.columns: 
+        gb.configure_column("設置", width=70, cellStyle=style_status, suppressSizeToFit=True)
+
+    # 5. 機種名 -> ここだけ flex=1 にして余白を埋める
+    if "機種" in df_filtered.columns: 
+        gb.configure_column("機種", minWidth=150, flex=1)
 
     grid_options = gb.build()
     
+    # CSVダウンロードボタンの作成 (タブ2用に追加した場合はここにも記述が必要です)
+    # ※特定のタブだけで出す場合は呼び出し元で制御しますが、汎用的に出すならここにあってもOK
+    # 今回は表示のみ調整します
+
     AgGrid(
         df_filtered,
         gridOptions=grid_options,
@@ -164,7 +201,7 @@ def display_filterable_table(df_in, key_id):
         height=400,
         theme="ag-theme-alpine", 
         key=f"grid_{key_id}",
-        fit_columns_on_grid_load=True
+        fit_columns_on_grid_load=True # これをTrueにしたまま、上記で個別制御する
     )
 
 # --- サイドバー (日付ボタン改修版) ---
@@ -452,4 +489,5 @@ with tab4:
                 fig5.update_traces(texttemplate="%{z:.1f}%", hovertemplate="機種: %{y}<br>ゾロ目: %{x}<br>機械割: %{z:.1f}%")
                 st.plotly_chart(fig5, use_container_width=True)
             else: st.info("ゾロ目データなし")
+
 

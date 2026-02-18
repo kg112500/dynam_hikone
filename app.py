@@ -134,7 +134,7 @@ def display_filterable_table(df_in, key_id):
     st.markdown(f"<small>抽出件数: {len(df_filtered)} 件</small>", unsafe_allow_html=True)
 
     gb = GridOptionsBuilder.from_dataframe(df_filtered)
-    # デフォルト設定: リサイズ可能にする
+    # デフォルト設定: リサイズ可能にするが、自動調整はしない
     gb.configure_default_column(resizable=True, filterable=True, sortable=True)
 
     # --- Javascriptフォーマット定義 ---
@@ -146,7 +146,7 @@ def display_filterable_table(df_in, key_id):
 
     # --- 列ごとの幅調整設定 ---
     
-    # 1. パーセント系 (勝率, 機械割) -> 幅を固定 (suppressSizeToFit=True)
+    # 1. パーセント系 (勝率, 機械割) -> 幅80px
     percent_cols = ["勝率", "機械割"]
     for col in percent_cols:
         if col in df_filtered.columns:
@@ -156,44 +156,38 @@ def display_filterable_table(df_in, key_id):
                 valueFormatter=fmt_percent, 
                 cellStyle=c_style, 
                 type=["numericColumn"], 
-                width=80,             # 幅指定
-                suppressSizeToFit=True # ★自動引き伸ばしを禁止
+                width=80
             )
 
-    # 2. 数値系 (差枚, G数, 台番) -> 幅を固定
+    # 2. 数値系 (差枚, G数, 台番) -> 幅80〜100px
     comma_cols = ["平均差枚", "総差枚", "平均G数", "総G数", "サンプル数", "前日差枚", "前日G数", "台番号", "台末尾"]
     for col in comma_cols:
         if col in df_filtered.columns:
             c_style = style_diff if "差枚" in col else None
-            # 台番号などは少し狭く、差枚などは少し広く
+            # 少し幅にメリハリをつける
             w = 70 if "台" in col or "サンプル" in col else 90
             gb.configure_column(
                 col, 
                 valueFormatter=fmt_comma, 
                 cellStyle=c_style, 
                 type=["numericColumn"], 
-                width=w, 
-                suppressSizeToFit=True # ★自動引き伸ばしを禁止
+                width=w
             )
             
     # 3. ゾロ目タイプ
     if "台ゾロ目タイプ" in df_filtered.columns:
-        gb.configure_column("台ゾロ目タイプ", width=90, suppressSizeToFit=True)
+        gb.configure_column("台ゾロ目タイプ", width=90)
 
     # 4. 設置状態
     if "設置" in df_filtered.columns: 
-        gb.configure_column("設置", width=70, cellStyle=style_status, suppressSizeToFit=True)
+        gb.configure_column("設置", width=70, cellStyle=style_status)
 
-    # 5. 機種名 -> ここだけ flex=1 にして余白を埋める
+    # 5. 機種名 -> 幅200px (flex=1 を削除して固定幅に)
     if "機種" in df_filtered.columns: 
-        gb.configure_column("機種", minWidth=150, flex=1)
+        gb.configure_column("機種", width=200)
 
     grid_options = gb.build()
     
-    # CSVダウンロードボタンの作成 (タブ2用に追加した場合はここにも記述が必要です)
-    # ※特定のタブだけで出す場合は呼び出し元で制御しますが、汎用的に出すならここにあってもOK
-    # 今回は表示のみ調整します
-
     AgGrid(
         df_filtered,
         gridOptions=grid_options,
@@ -201,7 +195,8 @@ def display_filterable_table(df_in, key_id):
         height=400,
         theme="ag-theme-alpine", 
         key=f"grid_{key_id}",
-        fit_columns_on_grid_load=True # これをTrueにしたまま、上記で個別制御する
+        # ★変更: ここをFalseに戻すことで、無理に引き伸ばさず設定したwidthを守らせます
+        fit_columns_on_grid_load=False 
     )
 
 # --- サイドバー (日付ボタン改修版) ---
@@ -489,5 +484,6 @@ with tab4:
                 fig5.update_traces(texttemplate="%{z:.1f}%", hovertemplate="機種: %{y}<br>ゾロ目: %{x}<br>機械割: %{z:.1f}%")
                 st.plotly_chart(fig5, use_container_width=True)
             else: st.info("ゾロ目データなし")
+
 
 

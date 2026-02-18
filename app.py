@@ -149,7 +149,7 @@ def display_filterable_table(df_in, key_id):
     
     # 1. 機種名 -> 幅100px (ここだけ上書き)
     if "機種" in df_filtered.columns: 
-        gb.configure_column("機種", width=100)
+        gb.configure_column("機種", width=80)
 
     # 2. パーセント系 (勝率, 機械割) -> 幅60px
     percent_cols = ["勝率", "機械割"]
@@ -161,7 +161,7 @@ def display_filterable_table(df_in, key_id):
                 valueFormatter=fmt_percent, 
                 cellStyle=c_style, 
                 type=["numericColumn"], 
-                width=50 # 明示的に60
+                width=60 # 明示的に60
             )
 
     # 3. 数値系 (差枚, G数, 台番) -> 幅60px
@@ -483,6 +483,7 @@ with tab4:
                 fig5.update_traces(texttemplate="%{z:.1f}%", hovertemplate="機種: %{y}<br>ゾロ目: %{x}<br>機械割: %{z:.1f}%")
                 st.plotly_chart(fig5, use_container_width=True)
             else: st.info("ゾロ目データなし")
+
 
 
 

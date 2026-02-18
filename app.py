@@ -103,7 +103,7 @@ if "台番号" in df.columns and "機種" in df.columns:
         latest_machine_map = temp_df.loc[latest_indices].set_index("台番号")["機種"].to_dict()
     except: pass
 
-# --- テーブル表示関数 (幅調整・CSVダウンロード付き) ---
+# --- テーブル表示関数 (幅指定: 機種100, 他60) ---
 def display_filterable_table(df_in, key_id):
     if df_in.empty:
         st.info("データがありません")
@@ -134,8 +134,9 @@ def display_filterable_table(df_in, key_id):
     st.markdown(f"<small>抽出件数: {len(df_filtered)} 件</small>", unsafe_allow_html=True)
 
     gb = GridOptionsBuilder.from_dataframe(df_filtered)
-    # デフォルト設定: リサイズ可能にするが、自動調整はしない
-    gb.configure_default_column(resizable=True, filterable=True, sortable=True)
+    
+    # ★変更: 全ての列の基本幅を「60px」に設定
+    gb.configure_default_column(resizable=True, filterable=True, sortable=True, width=60, minWidth=40)
 
     # --- Javascriptフォーマット定義 ---
     fmt_comma = JsCode("""function(p){ return (p.value !== null && p.value !== undefined) ? p.value.toLocaleString() : ''; }""")
@@ -144,9 +145,13 @@ def display_filterable_table(df_in, key_id):
     style_diff = JsCode("""function(p){if(p.value>0){return{'color':'blue','fontWeight':'bold'};}if(p.value<0){return{'color':'red'};}return null;}""")
     style_status = JsCode("""function(p){if(p.value==='💀撤去'){return{'color':'gray'};}return{'fontWeight':'bold'};}""")
 
-    # --- 列ごとの幅調整設定 ---
+    # --- 列ごとの設定 ---
     
-    # 1. パーセント系 (勝率, 機械割) -> 幅80px
+    # 1. 機種名 -> 幅100px (ここだけ上書き)
+    if "機種" in df_filtered.columns: 
+        gb.configure_column("機種", width=100)
+
+    # 2. パーセント系 (勝率, 機械割) -> 幅60px
     percent_cols = ["勝率", "機械割"]
     for col in percent_cols:
         if col in df_filtered.columns:
@@ -156,35 +161,29 @@ def display_filterable_table(df_in, key_id):
                 valueFormatter=fmt_percent, 
                 cellStyle=c_style, 
                 type=["numericColumn"], 
-                width=60
+                width=60 # 明示的に60
             )
 
-    # 2. 数値系 (差枚, G数, 台番) -> 幅80〜100px
+    # 3. 数値系 (差枚, G数, 台番) -> 幅60px
     comma_cols = ["平均差枚", "総差枚", "平均G数", "総G数", "サンプル数", "前日差枚", "前日G数", "台番号", "台末尾"]
     for col in comma_cols:
         if col in df_filtered.columns:
             c_style = style_diff if "差枚" in col else None
-            # 少し幅にメリハリをつける
-            w = 70 if "台" in col or "サンプル" in col else 90
             gb.configure_column(
                 col, 
                 valueFormatter=fmt_comma, 
                 cellStyle=c_style, 
                 type=["numericColumn"], 
-                width=w
+                width=60 # 明示的に60
             )
             
-    # 3. ゾロ目タイプ
+    # 4. ゾロ目タイプ -> 幅60px
     if "台ゾロ目タイプ" in df_filtered.columns:
-        gb.configure_column("台ゾロ目タイプ", width=90)
+        gb.configure_column("台ゾロ目タイプ", width=60)
 
-    # 4. 設置状態
+    # 5. 設置状態 -> 幅60px
     if "設置" in df_filtered.columns: 
-        gb.configure_column("設置", width=70, cellStyle=style_status)
-
-    # 5. 機種名 -> 幅200px (flex=1 を削除して固定幅に)
-    if "機種" in df_filtered.columns: 
-        gb.configure_column("機種", width=100)
+        gb.configure_column("設置", width=60, cellStyle=style_status)
 
     grid_options = gb.build()
     
@@ -195,7 +194,7 @@ def display_filterable_table(df_in, key_id):
         height=400,
         theme="ag-theme-alpine", 
         key=f"grid_{key_id}",
-        # ★変更: ここをFalseに戻すことで、無理に引き伸ばさず設定したwidthを守らせます
+        # ★重要: Falseにして、指定した「100px / 60px」を厳密に守らせる
         fit_columns_on_grid_load=False 
     )
 
@@ -484,6 +483,7 @@ with tab4:
                 fig5.update_traces(texttemplate="%{z:.1f}%", hovertemplate="機種: %{y}<br>ゾロ目: %{x}<br>機械割: %{z:.1f}%")
                 st.plotly_chart(fig5, use_container_width=True)
             else: st.info("ゾロ目データなし")
+
 
 
 

@@ -184,7 +184,7 @@ def display_filterable_table(df_in, key_id):
 
     # 5. 機種名 -> 幅200px (flex=1 を削除して固定幅に)
     if "機種" in df_filtered.columns: 
-        gb.configure_column("機種", width=200)
+        gb.configure_column("機種", width=100)
 
     grid_options = gb.build()
     
@@ -484,6 +484,7 @@ with tab4:
                 fig5.update_traces(texttemplate="%{z:.1f}%", hovertemplate="機種: %{y}<br>ゾロ目: %{x}<br>機械割: %{z:.1f}%")
                 st.plotly_chart(fig5, use_container_width=True)
             else: st.info("ゾロ目データなし")
+
 
 
 

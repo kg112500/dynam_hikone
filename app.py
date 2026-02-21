@@ -4,13 +4,14 @@ import plotly.express as px
 from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
 from datetime import datetime, timedelta
 
-# --- ★設定: ユーザー指定のURL ---
-SHEET_URL = "https://docs.google.com/spreadsheets/d/1SEDGQLHGRN0rnXgLvP7wNzUuch6oxs9W4AvsavTagKM/export?format=csv"
-MAPPING_URL = "https://docs.google.com/spreadsheets/d/1SEDGQLHGRN0rnXgLvP7wNzUuch6oxs9W4AvsavTagKM/export?format=csv&gid=59321871"
+# --- ★設定: スプレッドシートURL ---
+SHEET_URL = "https://docs.google.com/spreadsheets/d/115eAW2CR4x5c-oe5EVCCN4mz7qUCvjTXGieRcQ_cDXk/export?format=csv"
+MAPPING_URL = "https://docs.google.com/spreadsheets/d/1wIdronWDW8xK0jDepQfWbFPBbnIVrkTls2hBDqcduVI/export?format=csv&gid=1849745164"
 
 # --- ページ設定 ---
 st.set_page_config(page_title="ダイナム彦根分析ツール", layout="wide")
-# st.title の代わりに markdown を使い、文字サイズ(font-size)を指定します
+
+# ★修正: スマホ用にタイトル文字を調整
 st.markdown("<h2 style='font-size: 22px; margin-bottom: 0px;'>🎰 ダイナム彦根分析ツール (Pro版)</h2>", unsafe_allow_html=True)
 
 # --- 1. データ読み込み ---
@@ -104,13 +105,12 @@ if "台番号" in df.columns and "機種" in df.columns:
         latest_machine_map = temp_df.loc[latest_indices].set_index("台番号")["機種"].to_dict()
     except: pass
 
-# --- テーブル表示関数 (幅指定: 機種100, 他60) ---
+# --- テーブル表示関数 (幅固定: 機種100, 他60) ---
 def display_filterable_table(df_in, key_id):
     if df_in.empty:
         st.info("データがありません")
         return
 
-    # === ① フィルター操作エリア ===
     with st.expander("🔍 **絞り込み条件を開く**", expanded=False):
         c1, c2 = st.columns(2)
         df_filtered = df_in.copy()
@@ -131,58 +131,36 @@ def display_filterable_table(df_in, key_id):
                 min_win = st.slider("勝率以上(%)", 0, 100, 0, key=f"filter_win_{key_id}")
             df_filtered = df_filtered[df_filtered["勝率"] >= min_win]
 
-    # === ② 結果表示エリア ===
     st.markdown(f"<small>抽出件数: {len(df_filtered)} 件</small>", unsafe_allow_html=True)
 
     gb = GridOptionsBuilder.from_dataframe(df_filtered)
     
-    # ★変更: 全ての列の基本幅を「60px」に設定
+    # 全列の基本幅を60に設定
     gb.configure_default_column(resizable=True, filterable=True, sortable=True, width=60, minWidth=40)
 
-    # --- Javascriptフォーマット定義 ---
     fmt_comma = JsCode("""function(p){ return (p.value !== null && p.value !== undefined) ? p.value.toLocaleString() : ''; }""")
     fmt_percent = JsCode("""function(p){ return (p.value !== null && p.value !== undefined) ? Number(p.value).toFixed(1) + '%' : ''; }""")
     style_machine_wari = JsCode("""function(p){if(p.value>=105){return{'color':'white','backgroundColor':'#006400'};}if(p.value>=100){return{'backgroundColor':'#90EE90'};}return null;}""")
     style_diff = JsCode("""function(p){if(p.value>0){return{'color':'blue','fontWeight':'bold'};}if(p.value<0){return{'color':'red'};}return null;}""")
     style_status = JsCode("""function(p){if(p.value==='💀撤去'){return{'color':'gray'};}return{'fontWeight':'bold'};}""")
 
-    # --- 列ごとの設定 ---
-    
-    # 1. 機種名 -> 幅100px (ここだけ上書き)
     if "機種" in df_filtered.columns: 
-        gb.configure_column("機種", width=100)
+        gb.configure_column("機種", width=100) # 機種名だけ100
 
-    # 2. パーセント系 (勝率, 機械割) -> 幅60px
     percent_cols = ["勝率", "機械割"]
     for col in percent_cols:
         if col in df_filtered.columns:
             c_style = style_machine_wari if col == "機械割" else None
-            gb.configure_column(
-                col, 
-                valueFormatter=fmt_percent, 
-                cellStyle=c_style, 
-                type=["numericColumn"], 
-                width=60 # 明示的に60
-            )
+            gb.configure_column(col, valueFormatter=fmt_percent, cellStyle=c_style, type=["numericColumn"], width=60)
 
-    # 3. 数値系 (差枚, G数, 台番) -> 幅60px
     comma_cols = ["平均差枚", "総差枚", "平均G数", "総G数", "サンプル数", "前日差枚", "前日G数", "台番号", "台末尾"]
     for col in comma_cols:
         if col in df_filtered.columns:
             c_style = style_diff if "差枚" in col else None
-            gb.configure_column(
-                col, 
-                valueFormatter=fmt_comma, 
-                cellStyle=c_style, 
-                type=["numericColumn"], 
-                width=60 # 明示的に60
-            )
-            
-    # 4. ゾロ目タイプ -> 幅60px
+            gb.configure_column(col, valueFormatter=fmt_comma, cellStyle=c_style, type=["numericColumn"], width=60)
+
     if "台ゾロ目タイプ" in df_filtered.columns:
         gb.configure_column("台ゾロ目タイプ", width=60)
-
-    # 5. 設置状態 -> 幅60px
     if "設置" in df_filtered.columns: 
         gb.configure_column("設置", width=60, cellStyle=style_status)
 
@@ -195,38 +173,31 @@ def display_filterable_table(df_in, key_id):
         height=400,
         theme="ag-theme-alpine", 
         key=f"grid_{key_id}",
-        # ★重要: Falseにして、指定した「100px / 60px」を厳密に守らせる
-        fit_columns_on_grid_load=False 
+        fit_columns_on_grid_load=False # ここがFalseなので指定した幅が守られます
     )
 
-# --- サイドバー (日付ボタン改修版) ---
+# --- サイドバー設定 ---
 st.sidebar.header("🎯 戦略設定")
 
-# データ内の最小日・最大日・今日
 min_d_data = df["日付"].min().date()
 max_d_data = df["日付"].max().date()
 today = datetime.now().date()
 
-# 日付入力用のセッション状態を初期化
+# 期間セッションの初期化
 if "range_input" not in st.session_state:
     st.session_state["range_input"] = [min_d_data, max_d_data]
 
-# 期間セット用関数 (ボタンを押したらこれを呼ぶ)
 def apply_range(days=None):
-    if days is None: # 全期間
+    if days is None:
         new_range = [min_d_data, max_d_data]
     else:
-        # 過去N日 (データ範囲内に収める)
         start = max(today - timedelta(days=days), min_d_data)
         end = min(today, max_d_data)
         new_range = [start, end]
-    
-    # 状態を更新して再実行(rerun)させることで確実に反映
     st.session_state["range_input"] = new_range
     st.rerun()
 
 st.sidebar.markdown("📅 **期間ショートカット**")
-# ボタンのレイアウト (2段構成)
 col_b1, col_b2 = st.sidebar.columns(2)
 if col_b1.button("全期間"): apply_range(None)
 if col_b2.button("過去14日"): apply_range(14)
@@ -236,16 +207,15 @@ if col_b3.button("過去30日"): apply_range(30)
 if col_b4.button("過去60日"): apply_range(60)
 if col_b5.button("過去90日"): apply_range(90)
 
-# --- カレンダー入力 (スマホ対策の余白あり) ---
+# カレンダー入力 (スマホ対策の余白あり、エラー警告対策済み)
 st.sidebar.markdown("<br>", unsafe_allow_html=True) 
 
 dates = st.sidebar.date_input(
     "分析期間を指定",
-    # value=st.session_state["range_input"], ← この行を丸ごと消すだけ
     min_value=min_d_data,
     max_value=max_d_data,
     format="YYYY/MM/DD",
-    key="range_input" # ✅ keyがあるだけで自動で値が連動します
+    key="range_input" # value=... は削除済み
 )
 
 # 期間フィルター適用
@@ -256,7 +226,6 @@ elif len(dates) == 1:
     start_date = dates[0]
     df = df[df["日付"].dt.date == start_date]
 
-# --- その他のサイドバー設定 ---
 st.sidebar.markdown("---")
 if st.sidebar.checkbox("📋 元の機種名一覧を表示"):
     if "機種" in df.columns:
@@ -314,6 +283,7 @@ if target_ends: title_parts.append(f"末尾{target_ends}")
 if use_zorome: title_parts.append("ゾロ目")
 title_str = " & ".join(title_parts) if title_parts else "全期間"
 
+# ★修正: サブタイトルもスマホ用に調整し、正しい位置に配置しました
 st.markdown(f"<div style='font-size: 16px; font-weight: bold; margin-top: 15px; margin-bottom: 10px;'>🎯 分析対象: {title_str}</div>", unsafe_allow_html=True)
 
 # === タブ構成 ===
@@ -413,9 +383,9 @@ with tab2:
                 st.plotly_chart(fig, use_container_width=True)
                 
                 disp_df = filtered[["設置", "台番号", "機種", "機械割", "勝率", "平均差枚", "平均G数", "サンプル数"]].sort_values(["設置", "機械割"], ascending=[True, False])
-                # --- ★追加: CSVダウンロードボタン ---
-                csv = disp_df.to_csv(index=False, encoding='utf-8-sig') # Excelで文字化けしないよう utf-8-sig を指定
                 
+                # ★追加: CSVダウンロードボタン
+                csv = disp_df.to_csv(index=False, encoding='utf-8-sig')
                 st.download_button(
                     label="📥 ランキングをCSVでダウンロード",
                     data=csv,
@@ -423,7 +393,7 @@ with tab2:
                     mime='text/csv',
                     key='download_tab2'
                 )
-                # -----------------------------------
+
                 display_filterable_table(disp_df, key_id="tab2_ranking")
 
 # ==========================================
@@ -484,22 +454,3 @@ with tab4:
                 fig5.update_traces(texttemplate="%{z:.1f}%", hovertemplate="機種: %{y}<br>ゾロ目: %{x}<br>機械割: %{z:.1f}%")
                 st.plotly_chart(fig5, use_container_width=True)
             else: st.info("ゾロ目データなし")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

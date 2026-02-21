@@ -5,8 +5,8 @@ from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
 from datetime import datetime, timedelta
 
 # --- ★設定: スプレッドシートURL ---
-SHEET_URL = "https://docs.google.com/spreadsheets/d/115eAW2CR4x5c-oe5EVCCN4mz7qUCvjTXGieRcQ_cDXk/export?format=csv"
-MAPPING_URL = "https://docs.google.com/spreadsheets/d/1wIdronWDW8xK0jDepQfWbFPBbnIVrkTls2hBDqcduVI/export?format=csv&gid=1849745164"
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1SEDGQLHGRN0rnXgLvP7wNzUuch6oxs9W4AvsavTagKM/export?format=csv"
+MAPPING_URL = "https://docs.google.com/spreadsheets/d/1SEDGQLHGRN0rnXgLvP7wNzUuch6oxs9W4AvsavTagKM/export?format=csv&gid=59321871"
 
 # --- ページ設定 ---
 st.set_page_config(page_title="ダイナム彦根分析ツール", layout="wide")
@@ -454,3 +454,4 @@ with tab4:
                 fig5.update_traces(texttemplate="%{z:.1f}%", hovertemplate="機種: %{y}<br>ゾロ目: %{x}<br>機械割: %{z:.1f}%")
                 st.plotly_chart(fig5, use_container_width=True)
             else: st.info("ゾロ目データなし")
+

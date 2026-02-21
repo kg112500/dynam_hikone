@@ -240,11 +240,11 @@ st.sidebar.markdown("<br>", unsafe_allow_html=True)
 
 dates = st.sidebar.date_input(
     "分析期間を指定",
-    value=st.session_state["range_input"], # セッション状態と連動
+    # value=st.session_state["range_input"], ← この行を丸ごと消すだけ
     min_value=min_d_data,
     max_value=max_d_data,
     format="YYYY/MM/DD",
-    key="range_input" # キーを指定することでセッション管理下に置く
+    key="range_input" # ✅ keyがあるだけで自動で値が連動します
 )
 
 # 期間フィルター適用
@@ -483,6 +483,7 @@ with tab4:
                 fig5.update_traces(texttemplate="%{z:.1f}%", hovertemplate="機種: %{y}<br>ゾロ目: %{x}<br>機械割: %{z:.1f}%")
                 st.plotly_chart(fig5, use_container_width=True)
             else: st.info("ゾロ目データなし")
+
 
 
 

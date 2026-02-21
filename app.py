@@ -10,7 +10,7 @@ MAPPING_URL = "https://docs.google.com/spreadsheets/d/1SEDGQLHGRN0rnXgLvP7wNzUuc
 
 # --- ページ設定 ---
 st.set_page_config(page_title="ダイナム彦根分析ツール", layout="wide")
-st.title("🎰 ダイナム彦根分析ツール (Pro版)")
+st.markdown(f"<div style='font-size: 16px; font-weight: bold; margin-top: 15px; margin-bottom: 10px;'>🎯 分析対象: {title_str}</div>", unsafe_allow_html=True)
 
 # --- 1. データ読み込み ---
 @st.cache_data(ttl=600)
@@ -483,6 +483,7 @@ with tab4:
                 fig5.update_traces(texttemplate="%{z:.1f}%", hovertemplate="機種: %{y}<br>ゾロ目: %{x}<br>機械割: %{z:.1f}%")
                 st.plotly_chart(fig5, use_container_width=True)
             else: st.info("ゾロ目データなし")
+
 
 
 

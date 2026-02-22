@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
 from datetime import datetime, timedelta
+import jpholiday # ★追加: 日本の祝日判定ライブラリ
 
 # --- ★設定: スプレッドシートURL ---
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1SEDGQLHGRN0rnXgLvP7wNzUuch6oxs9W4AvsavTagKM/export?format=csv"
@@ -11,7 +12,7 @@ MAPPING_URL = "https://docs.google.com/spreadsheets/d/1SEDGQLHGRN0rnXgLvP7wNzUuc
 # --- ページ設定 ---
 st.set_page_config(page_title="ダイナム彦根分析ツール", layout="wide")
 
-# ★修正: スマホ用にタイトル文字を調整
+# スマホ用にタイトル文字を調整
 st.markdown("<h2 style='font-size: 22px; margin-bottom: 0px;'>🎰 ダイナム彦根分析ツール (Pro版)</h2>", unsafe_allow_html=True)
 
 # --- 1. データ読み込み ---
@@ -64,6 +65,10 @@ def load_data():
     df["Month"] = df["日付"].dt.month
     df["末尾"] = df["DayNum"] % 10 
     
+    # ★追加: 曜日(0:月〜6:日)と祝日判定
+    df["曜日"] = df["日付"].dt.dayofweek
+    df["is_Holiday"] = df["日付"].apply(lambda x: jpholiday.is_holiday(x.date()))
+
     # ゾロ目判定 (11/1なども含む)
     def check_is_zorome(row):
         d = row["DayNum"]
@@ -173,7 +178,7 @@ def display_filterable_table(df_in, key_id):
         height=400,
         theme="ag-theme-alpine", 
         key=f"grid_{key_id}",
-        fit_columns_on_grid_load=False # ここがFalseなので指定した幅が守られます
+        fit_columns_on_grid_load=False # 指定した幅を厳密に守る
     )
 
 # --- サイドバー設定 ---
@@ -207,7 +212,7 @@ if col_b3.button("過去30日"): apply_range(30)
 if col_b4.button("過去60日"): apply_range(60)
 if col_b5.button("過去90日"): apply_range(90)
 
-# カレンダー入力 (スマホ対策の余白あり、エラー警告対策済み)
+# カレンダー入力
 st.sidebar.markdown("<br>", unsafe_allow_html=True) 
 
 dates = st.sidebar.date_input(
@@ -215,7 +220,7 @@ dates = st.sidebar.date_input(
     min_value=min_d_data,
     max_value=max_d_data,
     format="YYYY/MM/DD",
-    key="range_input" # value=... は削除済み
+    key="range_input" 
 )
 
 # 期間フィルター適用
@@ -241,15 +246,25 @@ st.sidebar.subheader("📅 日付・条件フィルター")
 
 target_ends = st.sidebar.multiselect("① 日付の末尾 (0-9)", options=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9], default=[])
 use_zorome = st.sidebar.checkbox("② ゾロ目の日を含める (11/1等も含む)", value=False)
+# ★追加: 土日祝フィルター
+use_saturday = st.sidebar.checkbox("③ 土曜日を含める", value=False)
+use_sunday = st.sidebar.checkbox("④ 日曜日を含める", value=False)
+use_holiday = st.sidebar.checkbox("⑤ 祝日を含める", value=False)
 
 mask = pd.Series([False] * len(df), index=df.index)
-if target_ends: mask = mask | df["末尾"].isin(target_ends)
-if use_zorome: mask = mask | df["is_Zorome"]
 
-if not target_ends and not use_zorome:
-    target_df = df.copy()
-else:
+# ★修正: どれか1つでもフィルターがオンになっているか確認
+is_any_filter_active = bool(target_ends) or use_zorome or use_saturday or use_sunday or use_holiday
+
+if is_any_filter_active:
+    if target_ends: mask = mask | df["末尾"].isin(target_ends)
+    if use_zorome: mask = mask | df["is_Zorome"]
+    if use_saturday: mask = mask | (df["曜日"] == 5) # 5は土曜日
+    if use_sunday: mask = mask | (df["曜日"] == 6)   # 6は日曜日
+    if use_holiday: mask = mask | df["is_Holiday"]   # 祝日判定
     target_df = df[mask].copy()
+else:
+    target_df = df.copy() # 何も選ばれていない場合は全データ
 
 if target_df.empty:
     st.warning("条件に該当するデータがありません。")
@@ -278,12 +293,16 @@ def calculate_metrics(dataframe, group_cols):
     agg["平均G数"] = agg["平均G数"].fillna(0).round(0).astype(int)
     return agg
 
+# ★修正: タイトルに土日祝を反映
 title_parts = []
 if target_ends: title_parts.append(f"末尾{target_ends}")
 if use_zorome: title_parts.append("ゾロ目")
+if use_saturday: title_parts.append("土曜")
+if use_sunday: title_parts.append("日曜")
+if use_holiday: title_parts.append("祝日")
 title_str = " & ".join(title_parts) if title_parts else "全期間"
 
-# ★修正: サブタイトルもスマホ用に調整し、正しい位置に配置しました
+# サブタイトルもスマホ用に調整し、正しい位置に配置
 st.markdown(f"<div style='font-size: 16px; font-weight: bold; margin-top: 15px; margin-bottom: 10px;'>🎯 分析対象: {title_str}</div>", unsafe_allow_html=True)
 
 # === タブ構成 ===
@@ -384,7 +403,7 @@ with tab2:
                 
                 disp_df = filtered[["設置", "台番号", "機種", "機械割", "勝率", "平均差枚", "平均G数", "サンプル数"]].sort_values(["設置", "機械割"], ascending=[True, False])
                 
-                # ★追加: CSVダウンロードボタン
+                # CSVダウンロードボタン
                 csv = disp_df.to_csv(index=False, encoding='utf-8-sig')
                 st.download_button(
                     label="📥 ランキングをCSVでダウンロード",
@@ -454,4 +473,3 @@ with tab4:
                 fig5.update_traces(texttemplate="%{z:.1f}%", hovertemplate="機種: %{y}<br>ゾロ目: %{x}<br>機械割: %{z:.1f}%")
                 st.plotly_chart(fig5, use_container_width=True)
             else: st.info("ゾロ目データなし")
-

@@ -6,8 +6,8 @@ from datetime import datetime, timedelta
 import jpholiday # ★追加: 日本の祝日判定ライブラリ
 
 # --- ★設定: スプレッドシートURL ---
-SHEET_URL = "https://docs.google.com/spreadsheets/d/1SEDGQLHGRN0rnXgLvP7wNzUuch6oxs9W4AvsavTagKM/export?format=csv"
-MAPPING_URL = "https://docs.google.com/spreadsheets/d/1SEDGQLHGRN0rnXgLvP7wNzUuch6oxs9W4AvsavTagKM/export?format=csv&gid=59321871"
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1P40T_E7PGoaVYIRHEOMSMJ0aGKBA0Zw8Fg4pNFm7wSU/export?format=csv"
+MAPPING_URL = "https://docs.google.com/spreadsheets/d/1P40T_E7PGoaVYIRHEOMSMJ0aGKBA0Zw8Fg4pNFm7wSU/export?format=csv&gid=59321871"
 
 # --- ページ設定 ---
 st.set_page_config(page_title="ダイナム彦根分析ツール", layout="wide")
@@ -474,4 +474,5 @@ with tab4:
                 fig5.update_traces(texttemplate="%{z:.1f}%", hovertemplate="機種: %{y}<br>ゾロ目: %{x}<br>機械割: %{z:.1f}%")
                 st.plotly_chart(fig5, use_container_width=True)
             else: st.info("ゾロ目データなし")
+
 

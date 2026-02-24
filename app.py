@@ -401,7 +401,8 @@ with tab2:
                 fig.update_traces(hovertemplate="<b>%{hovertext}</b><br>勝率: %{x:.1f}%<br>平均差枚: %{y:,}枚<br>機械割: %{marker.color:.1f}%<br>サンプル: %{marker.size}")
                 st.plotly_chart(fig, use_container_width=True)
                 
-                disp_df = filtered[["設置", "台番号", "機種", "機械割", "勝率", "平均差枚", "平均G数", "サンプル数"]].sort_values(["設置", "機械割"], ascending=[True, False])
+                # ★修正: ご指定の並び順に変更
+                disp_df = filtered[["台番号", "機種", "勝率", "機械割", "平均差枚", "平均G数", "総差枚", "サンプル数", "設置"]].sort_values(["設置", "機械割"], ascending=[True, False])
                 
                 # CSVダウンロードボタン
                 csv = disp_df.to_csv(index=False, encoding='utf-8-sig')
@@ -473,3 +474,4 @@ with tab4:
                 fig5.update_traces(texttemplate="%{z:.1f}%", hovertemplate="機種: %{y}<br>ゾロ目: %{x}<br>機械割: %{z:.1f}%")
                 st.plotly_chart(fig5, use_container_width=True)
             else: st.info("ゾロ目データなし")
+

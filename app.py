@@ -10,10 +10,10 @@ SHEET_URL = "https://docs.google.com/spreadsheets/d/1SEDGQLHGRN0rnXgLvP7wNzUuch6
 MAPPING_URL = "https://docs.google.com/spreadsheets/d/1SEDGQLHGRN0rnXgLvP7wNzUuch6oxs9W4AvsavTagKM/export?format=csv&gid=59321871"
 
 # --- ページ設定 ---
-st.set_page_config(page_title="ダイナム彦根分析ツール", layout="wide")
+st.set_page_config(page_title="ダイナム愛知川分析ツール", layout="wide")
 
 # スマホ用にタイトル文字を調整
-st.markdown("<h2 style='font-size: 22px; margin-bottom: 0px;'>🎰 ダイナム彦根分析ツール (Pro版)</h2>", unsafe_allow_html=True)
+st.markdown("<h2 style='font-size: 22px; margin-bottom: 0px;'>🎰 ダイナム愛知川分析ツール (Pro版)</h2>", unsafe_allow_html=True)
 
 # --- 1. データ読み込み ---
 @st.cache_data(ttl=600)
@@ -140,7 +140,7 @@ def display_filterable_table(df_in, key_id):
 
     gb = GridOptionsBuilder.from_dataframe(df_filtered)
     
- # 全列の基本幅を60に設定
+    # 全列の基本幅を60に設定
     gb.configure_default_column(resizable=True, filterable=True, sortable=True, width=60, minWidth=40)
 
     fmt_comma = JsCode("""function(p){ return (p.value !== null && p.value !== undefined) ? p.value.toLocaleString() : ''; }""")
@@ -149,24 +149,31 @@ def display_filterable_table(df_in, key_id):
     style_diff = JsCode("""function(p){if(p.value>0){return{'color':'blue','fontWeight':'bold'};}if(p.value<0){return{'color':'red'};}return null;}""")
     style_status = JsCode("""function(p){if(p.value==='💀撤去'){return{'color':'gray'};}return{'fontWeight':'bold'};}""")
 
-    if "店舗" in df_filtered.columns: gb.configure_column("店舗", width=80)
-    if "機種" in df_filtered.columns: gb.configure_column("機種", width=100)
+    # ===============================================================
+    # ★追加: 機種、店舗、台ゾロ目タイプを「左に固定（pinned='left'）」
+    # ===============================================================
+    if "店舗" in df_filtered.columns: gb.configure_column("店舗", width=80, pinned='left')
+    if "機種" in df_filtered.columns: gb.configure_column("機種", width=100, pinned='left')
     if "設置" in df_filtered.columns: gb.configure_column("設置", width=60, cellStyle=style_status)
-    if "台ゾロ目タイプ" in df_filtered.columns: gb.configure_column("台ゾロ目タイプ", width=60)
+    if "台ゾロ目タイプ" in df_filtered.columns: gb.configure_column("台ゾロ目タイプ", width=60, pinned='left')
 
     # 項目ごとのフォーマット適用
     for col in df_filtered.columns:
         if col in ["店舗", "機種", "設置", "台ゾロ目タイプ"]: continue
+        
+        # ★追加: 台番号と台末尾も「左に固定（pinned='left'）」
+        pin_val = 'left' if col in ["台番号", "台末尾"] else None
+
         if "機械割" in col or "勝率" in col:
             c_style = style_machine_wari if "機械割" in col else None
-            gb.configure_column(col, valueFormatter=fmt_percent, cellStyle=c_style, type=["numericColumn"], width=60)
+            gb.configure_column(col, valueFormatter=fmt_percent, cellStyle=c_style, type=["numericColumn"], width=60, pinned=pin_val)
         elif "差枚" in col or "G数" in col or col in ["サンプル数", "台番号", "台末尾"]:
             c_style = style_diff if "差枚" in col else None
-            gb.configure_column(col, valueFormatter=fmt_comma, cellStyle=c_style, type=["numericColumn"], width=60)
+            gb.configure_column(col, valueFormatter=fmt_comma, cellStyle=c_style, type=["numericColumn"], width=60, pinned=pin_val)
 
     grid_options = gb.build()
 
-    # --- ★追加: 日付ごとに列をグループ化する処理 ---
+    # --- 日付ごとに列をグループ化する処理 ---
     new_column_defs = []
     date_groups = {}
 
@@ -521,8 +528,3 @@ with tab4:
                 fig5.update_traces(texttemplate="%{z:.1f}%", hovertemplate="機種: %{y}<br>ゾロ目: %{x}<br>機械割: %{z:.1f}%")
                 st.plotly_chart(fig5, use_container_width=True)
             else: st.info("ゾロ目データなし")
-
-
-
-
-

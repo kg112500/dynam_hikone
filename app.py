@@ -149,14 +149,14 @@ def display_filterable_table(df_in, key_id):
     style_diff = JsCode("""function(p){if(p.value>0){return{'color':'blue','fontWeight':'bold'};}if(p.value<0){return{'color':'red'};}return null;}""")
     style_status = JsCode("""function(p){if(p.value==='💀撤去'){return{'color':'gray'};}return{'fontWeight':'bold'};}""")
 
+    if "店舗" in df_filtered.columns: gb.configure_column("店舗", width=80)
     if "機種" in df_filtered.columns: gb.configure_column("機種", width=100)
     if "設置" in df_filtered.columns: gb.configure_column("設置", width=60, cellStyle=style_status)
     if "台ゾロ目タイプ" in df_filtered.columns: gb.configure_column("台ゾロ目タイプ", width=60)
 
-    # ★列名に特定の文字が含まれていれば自動でフォーマットを適用する
+    # 項目ごとのフォーマット適用
     for col in df_filtered.columns:
-        if col in ["機種", "設置", "台ゾロ目タイプ"]: continue
-        
+        if col in ["店舗", "機種", "設置", "台ゾロ目タイプ"]: continue
         if "機械割" in col or "勝率" in col:
             c_style = style_machine_wari if "機械割" in col else None
             gb.configure_column(col, valueFormatter=fmt_percent, cellStyle=c_style, type=["numericColumn"], width=60)
@@ -165,7 +165,33 @@ def display_filterable_table(df_in, key_id):
             gb.configure_column(col, valueFormatter=fmt_comma, cellStyle=c_style, type=["numericColumn"], width=60)
 
     grid_options = gb.build()
-    
+
+    # --- ★追加: 日付ごとに列をグループ化する処理 ---
+    new_column_defs = []
+    date_groups = {}
+
+    for col_def in grid_options['columnDefs']:
+        field = col_def.get('field', '')
+        # "YYYY/MM/DD_項目" の形かどうかを判定
+        if "_" in field and len(field.split("_")[0]) == 10 and field.split("_")[0].count("/") == 2:
+            date_str, metric = field.split("_", 1)
+            col_def['headerName'] = metric # ヘッダーを「差枚数」「G数」「機械割」に変更
+            if date_str not in date_groups:
+                date_groups[date_str] = []
+            date_groups[date_str].append(col_def)
+        else:
+            new_column_defs.append(col_def)
+
+    # 日付グループ（最新が左になるように降順で追加）
+    for date_str in sorted(date_groups.keys(), reverse=True):
+        new_column_defs.append({
+            "headerName": date_str,
+            "children": date_groups[date_str]
+        })
+
+    grid_options['columnDefs'] = new_column_defs
+    # ------------------------------------------------
+
     AgGrid(
         df_filtered,
         gridOptions=grid_options,
@@ -173,7 +199,7 @@ def display_filterable_table(df_in, key_id):
         height=400,
         theme="ag-theme-alpine", 
         key=f"grid_{key_id}",
-        fit_columns_on_grid_load=False # 指定した幅を厳密に守る
+        fit_columns_on_grid_load=False
     )
 
 # --- サイドバー設定 ---
@@ -396,40 +422,36 @@ with tab2:
                 fig.update_traces(hovertemplate="<b>%{hovertext}</b><br>勝率: %{x:.1f}%<br>平均差枚: %{y:,}枚<br>機械割: %{marker.color:.1f}%<br>サンプル: %{marker.size}")
                 st.plotly_chart(fig, use_container_width=True)
                 
-               # 基本のランキング用データ (ご指定の並び順)
+             # 基本のランキング用データ
                 disp_df = filtered[["台番号", "機種", "勝率", "機械割", "平均差枚", "平均G数", "総差枚", "サンプル数", "設置"]].sort_values(["設置", "機械割"], ascending=[True, False])
                 
                 # --- ★追加: 日別データの横展開（ピボット）処理 ---
-                # 該当する台の元データを抽出
                 daily_df = target_df[["台番号", "機種", "日付", "G数", "総差枚"]].copy()
-                
-                # 日別の機械割を計算
                 daily_df["機械割"] = daily_df.apply(lambda x: ((x["G数"]*3 + x["総差枚"])/(x["G数"]*3)*100) if x["G数"]>0 else 0, axis=1).round(1)
                 
-                # 日付を「MM/DD」形式にする
-                daily_df["日付文字"] = daily_df["日付"].dt.strftime('%m/%d')
+                # 年を含めた日付形式に変更
+                daily_df["日付文字"] = daily_df["日付"].dt.strftime('%Y/%m/%d')
                 
-                # 台番・機種を軸にして、日付ごとのG数・差枚・機械割を横に並べる
-                pivot_df = daily_df.pivot_table(index=["台番号", "機種"], columns="日付文字", values=["G数", "総差枚", "機械割"], aggfunc="first")
+                # 表示名を「差枚数」に変更してピボット
+                daily_df.rename(columns={"総差枚": "差枚数"}, inplace=True)
+                pivot_df = daily_df.pivot_table(index=["台番号", "機種"], columns="日付文字", values=["差枚数", "G数", "機械割"], aggfunc="first")
                 
                 if not pivot_df.empty:
-                    # 列名を「02/01_G数」のように結合してフラットにする
                     pivot_df.columns = [f"{col[1]}_{col[0]}" for col in pivot_df.columns]
                     pivot_df.reset_index(inplace=True)
                     
-                    # 日付順、かつ「G数 → 差枚 → 機械割」の順に列を並び替える
-                    date_strs = sorted(daily_df["日付文字"].unique())
+                    # 降順（最新が左）に並び替え、項目の順序を指定
+                    date_strs = sorted(daily_df["日付文字"].unique(), reverse=True)
                     ordered_cols = ["台番号", "機種"]
                     for d in date_strs:
-                        ordered_cols.extend([f"{d}_G数", f"{d}_総差枚", f"{d}_機械割"])
+                        ordered_cols.extend([f"{d}_差枚数", f"{d}_G数", f"{d}_機械割"])
+                    
                     available_cols = [c for c in ordered_cols if c in pivot_df.columns]
                     pivot_df = pivot_df[available_cols]
                     
-                    # disp_df に日別データを合体（マージ）
                     disp_df = pd.merge(disp_df, pivot_df, on=["台番号", "機種"], how="left")
                 # ------------------------------------------------
 
-                # CSVダウンロードボタン
                 csv = disp_df.to_csv(index=False, encoding='utf-8-sig')
                 st.download_button(
                     label="📥 ランキングをCSVでダウンロード",
@@ -499,6 +521,7 @@ with tab4:
                 fig5.update_traces(texttemplate="%{z:.1f}%", hovertemplate="機種: %{y}<br>ゾロ目: %{x}<br>機械割: %{z:.1f}%")
                 st.plotly_chart(fig5, use_container_width=True)
             else: st.info("ゾロ目データなし")
+
 
 
 
